@@ -58,6 +58,7 @@ const purchase = (id, productId, date, unitPrice, storeId, quantity = 1) => ({
 assert.equal(text.normalizePersianText('  كالا‌ي  ايراني  '), 'کالای ایرانی')
 assert.equal(text.sameNormalizedText('فروشگاه كالا', 'فروشگاه کالا'), true)
 assert.equal(text.sameNormalizedText('مدل ۱۲۳', 'مدل 123'), true)
+assert.deepEqual(['کالای ۱۰', 'کالای ۲', 'آب', 'ابزار'].sort(text.comparePersianText), ['آب', 'ابزار', 'کالای ۲', 'کالای ۱۰'])
 
 const products = [product('p1', 'برنج')]
 const purchases = [purchase('a', 'p1', '2026-01-02', 100), purchase('b', 'p1', '2026-03-02', 120)]

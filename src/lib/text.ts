@@ -30,6 +30,12 @@ export function sameNormalizedText(a: string, b: string) {
   return normalizePersianText(a) === normalizePersianText(b)
 }
 
+const persianCollator = new Intl.Collator('fa', { numeric: true, sensitivity: 'base' })
+
+export function comparePersianText(a: string, b: string) {
+  return persianCollator.compare(normalizePersianText(a), normalizePersianText(b))
+}
+
 export function makeSearchKey(...values: Array<string | undefined | null>) {
   return normalizePersianText(values.filter(Boolean).join(' '))
 }
