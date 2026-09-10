@@ -1,10 +1,11 @@
-import type { BackupData, Product, Purchase, Store } from './types'
+import type { BackupData, FinancialTransaction, Product, Purchase, Store } from './types'
 import { makeSearchKey, normalizePersianText, sameNormalizedText } from './text'
 
 export interface MergePlan {
   productsToPut: Product[]
   storesToPut: Store[]
   purchasesToPut: Purchase[]
+  transactionsToPut: FinancialTransaction[]
   dedupedProducts: number
   dedupedStores: number
 }
@@ -14,18 +15,18 @@ function productIdentity(product: Product) {
 }
 
 
-export function resolveMergeCurrency(localCurrency: string, incomingCurrency: string, localPurchaseCount: number, incomingPurchaseCount: number) {
+export function resolveMergeCurrency(localCurrency: string, incomingCurrency: string, localMoneyRecordCount: number, incomingMoneyRecordCount: number) {
   const mismatch = !sameNormalizedText(localCurrency, incomingCurrency)
-  if (localPurchaseCount > 0 && incomingPurchaseCount > 0 && mismatch) {
+  if (localMoneyRecordCount > 0 && incomingMoneyRecordCount > 0 && mismatch) {
     throw new Error(`واحد پول داده فعلی «${localCurrency}» و پشتیبان «${incomingCurrency}» متفاوت است. برای جلوگیری از ادغام مبالغ ناسازگار، ابتدا داده‌ها را به یک واحد مشترک تبدیل کنید.`)
   }
   return {
-    adoptIncomingCurrency: localPurchaseCount === 0 && incomingPurchaseCount > 0 && mismatch,
+    adoptIncomingCurrency: localMoneyRecordCount === 0 && incomingMoneyRecordCount > 0 && mismatch,
   }
 }
 
 export function planBackupMerge(
-  local: Pick<BackupData, 'products' | 'stores' | 'purchases'>,
+  local: Pick<BackupData, 'products' | 'stores' | 'purchases' | 'transactions'>,
   incoming: BackupData,
 ): MergePlan {
   const localStoreById = new Map(local.stores.map(store => [store.id, store]))
@@ -99,5 +100,5 @@ export function planBackupMerge(
     storeId: purchase.storeId ? (storeIdMap.get(purchase.storeId) ?? purchase.storeId) : undefined,
   }))
 
-  return { productsToPut, storesToPut, purchasesToPut, dedupedProducts, dedupedStores }
+  return { productsToPut, storesToPut, purchasesToPut, transactionsToPut: incoming.transactions, dedupedProducts, dedupedStores }
 }

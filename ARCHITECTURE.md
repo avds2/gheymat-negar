@@ -1,4 +1,4 @@
-# معماری قیمت‌نگار 1.3.5
+# معماری قیمت‌نگار 1.4.0
 
 ## تاریخ و تقویم
 
@@ -35,6 +35,22 @@
 
 ## مدل داده و invariantها
 
+### FinancialTransaction
+
+- `kind` فقط `income` یا `expense` است.
+- `amount` باید عدد متناهی و بزرگ‌تر از صفر باشد.
+- `date` همان قرارداد ISO محلی Purchase را دارد و تاریخ آینده پذیرفته نمی‌شود.
+- `category` اجباری است؛ فهرست پیشنهادی فقط کمک رابط کاربری است و دسته سفارشی مجاز می‌ماند.
+- Purchase در Transaction کپی نمی‌شود. لایه analytics هنگام ساخت دفتر و cashflow، `Purchase.totalPaid` را به‌عنوان هزینه کالایی با Transactionهای مستقل ترکیب می‌کند.
+- جدول `transactions` در migration نسخه 3 Dexie افزوده می‌شود؛ جدول‌ها و داده‌های نسخه‌های قبلی حفظ می‌شوند.
+
+### محاسبه مبلغ خرید
+
+- ورودی اصلی خرید `quantity` و `totalPaid` واقعی است.
+- `unitPrice = totalPaid / quantity` در زمان ذخیره محاسبه می‌شود و منبع مقایسه قیمت باقی می‌ماند.
+- اگر مبلغ قبل از تخفیف وارد شود، `listedUnitPrice = listedTotal / quantity` و `discount = listedTotal - totalPaid` ذخیره می‌شوند.
+- مبلغ قبل از تخفیف نمی‌تواند کمتر از مبلغ واقعی پرداخت‌شده باشد.
+
 ### Product
 
 - `name` و `unit` خالی نیستند.
@@ -62,9 +78,9 @@
 
 `currency` یک label سراسری برای همه مبالغ است و تبدیل نرخ ارز انجام نمی‌دهد. برای جلوگیری از relabel شدن مبالغ تاریخی:
 
-- پس از اولین خرید، ویرایش واحد پول در Settings قفل می‌شود.
-- Merge وقتی هر دو طرف Purchase دارند و currency متفاوت است، متوقف می‌شود.
-- اگر داده محلی هنوز Purchase ندارد، Merge می‌تواند currency پشتیبان را بپذیرد.
+- پس از اولین Purchase یا FinancialTransaction، ویرایش واحد پول در Settings قفل می‌شود.
+- Merge وقتی هر دو طرف رکورد مالی دارند و currency متفاوت است، متوقف می‌شود.
+- اگر داده محلی هنوز هیچ رکورد مالی ندارد، Merge می‌تواند currency پشتیبان را بپذیرد.
 
 ## جست‌وجوی فارسی
 
@@ -120,7 +136,7 @@ Indexₜ = Indexₜ₋₁ × R
 
 ### Replace
 
-چهار store در یک transaction پاک می‌شوند و سپس Backup معتبر جایگزین می‌شود. تنظیمات Backup نیز جایگزین می‌شوند.
+پنج store شامل Product، Store، Purchase، FinancialTransaction و Settings در یک transaction پاک می‌شوند و سپس Backup معتبر جایگزین می‌شود. تنظیمات Backup نیز جایگزین می‌شوند.
 
 ### Merge
 
@@ -129,6 +145,7 @@ Indexₜ = Indexₜ₋₁ × R
 - Store هم‌نام به ID محلی remap می‌شود.
 - Product همسان بر اساس `name + brand + unit` به ID محلی remap می‌شود.
 - Purchaseهای وابسته با IDهای remap‌شده ذخیره می‌شوند.
+- FinancialTransactionها با semantics upsert و بر اساس شناسه ادغام می‌شوند.
 - رکوردهای هم‌شناسه با `bulkPut` upsert می‌شوند.
 - تغییر `unit` برای Product هم‌شناسه‌ای که history دارد باعث توقف Merge می‌شود.
 - ناسازگاری currency طبق invariant بالا باعث توقف Merge می‌شود.

@@ -91,6 +91,13 @@ export function previousPersianMonthISO(anchor: string) {
   return startOfPersianMonthISO(addDaysISO(start, -1))
 }
 
+export function shiftPersianMonthISO(anchor: string, offset: number) {
+  let cursor = startOfPersianMonthISO(anchor)
+  const step = offset < 0 ? previousPersianMonthISO : nextPersianMonthISO
+  for (let index = 0; index < Math.abs(offset); index += 1) cursor = step(cursor)
+  return cursor
+}
+
 export type PersianCalendarMonth = {
   startISO: string
   label: string

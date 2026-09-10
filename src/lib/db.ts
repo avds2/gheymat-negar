@@ -1,10 +1,11 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AppSettings, Product, Purchase, Store } from './types'
+import type { AppSettings, FinancialTransaction, Product, Purchase, Store } from './types'
 
 class GheymatDB extends Dexie {
   products!: EntityTable<Product, 'id'>
   stores!: EntityTable<Store, 'id'>
   purchases!: EntityTable<Purchase, 'id'>
+  transactions!: EntityTable<FinancialTransaction, 'id'>
   settings!: EntityTable<AppSettings, 'id'>
 
   constructor() {
@@ -23,6 +24,9 @@ class GheymatDB extends Dexie {
     }).upgrade(transaction => transaction.table('products').toCollection().modify(product => {
       delete (product as { weight?: number }).weight
     }))
+    this.version(3).stores({
+      transactions: 'id, kind, date, category, createdAt, updatedAt'
+    })
   }
 }
 
