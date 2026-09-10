@@ -1,11 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie'
-import type { AppSettings, FinancialTransaction, Product, Purchase, Store } from './types'
+import type { AppSettings, FinancialSnapshot, FinancialTransaction, Product, Purchase, Store } from './types'
 
 class GheymatDB extends Dexie {
   products!: EntityTable<Product, 'id'>
   stores!: EntityTable<Store, 'id'>
   purchases!: EntityTable<Purchase, 'id'>
   transactions!: EntityTable<FinancialTransaction, 'id'>
+  financialSnapshots!: EntityTable<FinancialSnapshot, 'id'>
   settings!: EntityTable<AppSettings, 'id'>
 
   constructor() {
@@ -26,6 +27,9 @@ class GheymatDB extends Dexie {
     }))
     this.version(3).stores({
       transactions: 'id, kind, date, category, createdAt, updatedAt'
+    })
+    this.version(4).stores({
+      financialSnapshots: 'id, &month, rateDate, updatedAt'
     })
   }
 }

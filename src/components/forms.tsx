@@ -3,9 +3,10 @@ import { useState, type FormEvent } from 'react'
 import { Check } from 'lucide-react'
 import { db, uid } from '../lib/db'
 import { PersianDatePicker } from './date-picker'
-import { formatMoney, todayISO } from '../lib/format'
+import { formatMoney, formatMonth, todayISO } from '../lib/format'
 import { normalizeStoreName, sameNormalizedText } from '../lib/text'
-import type { FinancialTransaction, Product, Purchase, Store, TransactionKind } from '../lib/types'
+import type { FinancialSnapshot, FinancialTransaction, Product, Purchase, Store, TransactionKind } from '../lib/types'
+import { addDaysISO, shiftPersianMonthISO, startOfPersianMonthISO } from '../lib/persian-date'
 
 type ToastKind = 'ok' | 'error' | 'info'
 type PushToast = (text: string, kind?: ToastKind) => void
@@ -316,6 +317,80 @@ export function TransactionForm({ transactions, transaction, initialKind = 'expe
     </label>
     <div className="form-actions field-span-2">
       <button className="button primary" type="submit" disabled={invalid}><Check size={18}/>{transaction ? 'ذخیره تغییرات' : 'ثبت تراکنش'}</button>
+      <button type="button" className="button ghost" onClick={onCancel}>انصراف</button>
+    </div>
+  </form>
+}
+
+interface FinancialSnapshotFormProps {
+  month: string
+  snapshot?: FinancialSnapshot | null
+  currency: string
+  onDone: () => void
+  onCancel: () => void
+  pushToast: PushToast
+}
+
+export function FinancialSnapshotForm({ month, snapshot, currency, onDone, onCancel, pushToast }: FinancialSnapshotFormProps) {
+  const [usdRate, setUsdRate] = useState(snapshot ? String(snapshot.usdRate) : '')
+  const [rateDate, setRateDate] = useState(snapshot?.rateDate ?? month)
+  const [savingsBalance, setSavingsBalance] = useState(snapshot?.savingsBalance != null ? String(snapshot.savingsBalance) : '')
+  const [note, setNote] = useState(snapshot?.note ?? '')
+  const rate = Number(usdRate)
+  const balance = savingsBalance === '' ? undefined : Number(savingsBalance)
+  const maxRateDate = month === startOfPersianMonthISO(todayISO()) ? todayISO() : addDaysISO(shiftPersianMonthISO(month, 1), -1)
+  const rateInvalid = !Number.isFinite(rate) || rate <= 0
+  const balanceInvalid = balance != null && (!Number.isFinite(balance) || balance < 0)
+  const dateInvalid = !rateDate || rateDate > todayISO() || startOfPersianMonthISO(rateDate) !== month
+  const invalid = rateInvalid || balanceInvalid || dateInvalid
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (rateInvalid) return pushToast('قیمت هر دلار باید بیشتر از صفر باشد.', 'error')
+    if (balanceInvalid) return pushToast('مانده پس‌انداز نمی‌تواند منفی باشد.', 'error')
+    if (dateInvalid) return pushToast('تاریخ نرخ دلار باید داخل ماه انتخابی و حداکثر امروز باشد.', 'error')
+    const now = new Date().toISOString()
+    const row: FinancialSnapshot = {
+      id: snapshot?.id ?? `fin_${month}`,
+      month,
+      usdRate: rate,
+      rateDate,
+      savingsBalance: balance,
+      note: note.trim() || undefined,
+      createdAt: snapshot?.createdAt ?? now,
+      updatedAt: now,
+    }
+    try {
+      await db.financialSnapshots.put(row)
+      pushToast(snapshot ? 'معیار مالی ماه ویرایش شد.' : 'معیار مالی ماه ثبت شد.')
+      onDone()
+    } catch {
+      pushToast('ذخیره معیار مالی ناموفق بود. دوباره تلاش کنید.', 'error')
+    }
+  }
+
+  return <form onSubmit={submit} className="form-grid">
+    <div className="snapshot-month field-span-2"><span>ماه گزارش</span><strong>{formatMonth(month)}</strong></div>
+    <label className="field">
+      <span>قیمت یک دلار ({currency}) *</span>
+      <input autoFocus inputMode="numeric" type="number" min="0.0001" step="any" value={usdRate} onChange={event => setUsdRate(event.target.value)} placeholder="نرخ معیار ابتدای ماه" required/>
+      <small className="field-help">نرخ معیار خودتان، ترجیحاً دلار آزاد ابتدای ماه</small>
+    </label>
+    <div className="field">
+      <span>تاریخ نرخ *</span>
+      <PersianDatePicker value={rateDate} onChange={setRateDate} min={month} max={maxRateDate} required ariaLabel="تاریخ نرخ دلار"/>
+    </div>
+    <label className="field field-span-2">
+      <span>مانده کل پس‌انداز ({currency})</span>
+      <input inputMode="numeric" type="number" min="0" step="any" value={savingsBalance} onChange={event => setSavingsBalance(event.target.value)} placeholder="اختیاری"/>
+      <small className="field-help">موجودی کل پس‌انداز را وارد کنید؛ پس‌انداز همان ماه جداگانه از درآمد منهای هزینه محاسبه می‌شود.</small>
+    </label>
+    <label className="field field-span-2">
+      <span>منبع نرخ یا یادداشت</span>
+      <textarea value={note} onChange={event => setNote(event.target.value)} rows={2} placeholder="مثلاً نرخ دلار آزاد در شروع ماه" maxLength={10_000}/>
+    </label>
+    <div className="form-actions field-span-2">
+      <button className="button primary" type="submit" disabled={invalid}><Check size={18}/>ذخیره معیار ماه</button>
       <button type="button" className="button ghost" onClick={onCancel}>انصراف</button>
     </div>
   </form>

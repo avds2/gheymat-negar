@@ -1,5 +1,6 @@
-import type { FinancialTransaction, Product, Purchase, Store } from './types'
+import type { FinancialSnapshot, FinancialTransaction, Product, Purchase, Store } from './types'
 import { uid } from './db'
+import { startOfPersianMonthISO } from './persian-date'
 
 export function makeDemoData() {
   const now = new Date().toISOString()
@@ -56,5 +57,17 @@ export function makeDemoData() {
     if (sequence % 2 === 0) addTransaction('expense', 'قبوض', 900_000 + sequence * 30_000)
   }
 
-  return { products, stores, purchases, transactions }
+  const months = [...new Set([...purchases.map(row => row.date), ...transactions.map(row => row.date)].map(startOfPersianMonthISO))].sort()
+  const financialSnapshots: FinancialSnapshot[] = months.map((month, index) => ({
+    id: `fin_${month}`,
+    month,
+    usdRate: 58_000 + index * 2_750,
+    rateDate: month,
+    savingsBalance: 180_000_000 + index * 12_000_000,
+    note: 'داده نمونه نرخ دلار آزاد',
+    createdAt: now,
+    updatedAt: now,
+  }))
+
+  return { products, stores, purchases, transactions, financialSnapshots }
 }

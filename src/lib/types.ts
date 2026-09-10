@@ -45,6 +45,17 @@ export interface FinancialTransaction {
   updatedAt: string
 }
 
+export interface FinancialSnapshot {
+  id: string
+  month: string
+  usdRate: number
+  rateDate: string
+  savingsBalance?: number
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AppSettings {
   id: 'main'
   currency: string
@@ -55,11 +66,12 @@ export interface AppSettings {
 
 export interface BackupData {
   schema: 'gheymat-negar'
-  version: 1 | 2
+  version: 1 | 2 | 3
   exportedAt: string
   products: Product[]
   stores: Store[]
   purchases: Purchase[]
   transactions: FinancialTransaction[]
+  financialSnapshots: FinancialSnapshot[]
   settings: AppSettings
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import {
   Activity, Archive, ArrowDownCircle, ArrowUpCircle, Box, Check, ChevronLeft, CloudOff, Database,
-  Download, FileJson, FileSpreadsheet, Gauge, HardDrive, Info, LineChart as LineIcon, LockKeyhole,
+  DollarSign, Download, FileJson, FileSpreadsheet, Gauge, HardDrive, Info, LineChart as LineIcon, LockKeyhole,
   Minus, Moon, PackagePlus, Pencil, Plus, ReceiptText, Search, Settings, ShieldCheck, ShoppingBasket,
   Sun, Trash2, TrendingDown, TrendingUp, Upload, WifiOff, X
 } from 'lucide-react'
@@ -10,16 +10,16 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis
 } from 'recharts'
 import { db, DEFAULT_SETTINGS } from './lib/db'
-import type { BackupData, FinancialTransaction, Product, Purchase, Store, ThemeMode, TransactionKind } from './lib/types'
-import { buildCompositeIndex, buildMonthlyCashflow, categoryInflation, filterPurchases, getProductStats, lastNDaysISO, percentageChange, periodProductChange, sortPurchases, storeComparison, totalSpend, transactionTotal } from './lib/analytics'
-import { downloadText, encryptBackup, parseBackup, purchasesToCsv, transactionsToCsv } from './lib/backup'
+import type { BackupData, FinancialSnapshot, FinancialTransaction, Product, Purchase, Store, ThemeMode, TransactionKind } from './lib/types'
+import { buildCompositeIndex, buildFinancialBenchmarks, buildMonthlyCashflow, categoryInflation, filterPurchases, getProductStats, lastNDaysISO, percentageChange, periodProductChange, sortPurchases, storeComparison, totalSpend, transactionTotal } from './lib/analytics'
+import { downloadText, encryptBackup, financialSnapshotsToCsv, parseBackup, purchasesToCsv, transactionsToCsv } from './lib/backup'
 import { formatDate, formatMoney, formatMonth, formatPct, faDecimal, faNumber, todayISO } from './lib/format'
 import { makeDemoData } from './lib/demo'
 import { makeSearchKey, normalizePersianText, normalizeStoreName, sameNormalizedText } from './lib/text'
 import { planBackupMerge, resolveMergeCurrency } from './lib/merge'
 import { APP_VERSION, BACKUP_REMINDER_DAYS, MAX_BACKUP_FILE_BYTES } from './lib/constants'
 import { ChartTooltip } from './components/charts'
-import { ProductForm, PurchaseForm, TransactionForm } from './components/forms'
+import { FinancialSnapshotForm, ProductForm, PurchaseForm, TransactionForm } from './components/forms'
 import { PersianDatePicker } from './components/date-picker'
 import { Badge, ConfirmDialog, EmptyState, Modal, StatCard } from './components/ui'
 import { MobileNavigation, Sidebar, Topbar, type PageId } from './components/navigation'
@@ -33,17 +33,20 @@ interface BeforeInstallPromptEvent extends Event {
 const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)']
 
 function pctTone(value: number | null) { return value == null || value === 0 ? 'neutral' : value > 0 ? 'up' : 'down' }
+function growthTone(value: number | null) { return value == null || value === 0 ? 'neutral' : value > 0 ? 'down' : 'up' }
 export default function App() {
   const productsLive = useLiveQuery(() => db.products.toArray())
   const storesLive = useLiveQuery(() => db.stores.toArray())
   const purchasesLive = useLiveQuery(() => db.purchases.toArray())
   const transactionsLive = useLiveQuery(() => db.transactions.toArray())
+  const financialSnapshotsLive = useLiveQuery(() => db.financialSnapshots.toArray())
   const settings = useLiveQuery(() => db.settings.get('main'), [], DEFAULT_SETTINGS) ?? DEFAULT_SETTINGS
-  const loading = productsLive === undefined || storesLive === undefined || purchasesLive === undefined || transactionsLive === undefined
+  const loading = productsLive === undefined || storesLive === undefined || purchasesLive === undefined || transactionsLive === undefined || financialSnapshotsLive === undefined
   const products = productsLive ?? []
   const stores = storesLive ?? []
   const purchases = purchasesLive ?? []
   const transactions = transactionsLive ?? []
+  const financialSnapshots = financialSnapshotsLive ?? []
 
   const [page, setPage] = useState<PageId>('dashboard')
   const [financeMonth, setFinanceMonth] = useState(() => startOfPersianMonthISO(todayISO()))
@@ -51,6 +54,7 @@ export default function App() {
   const [productModal, setProductModal] = useState<{open:boolean; product?:Product|null}>({open:false})
   const [purchaseModal, setPurchaseModal] = useState<{open:boolean; purchase?:Purchase|null; productId?:string}>({open:false})
   const [transactionModal, setTransactionModal] = useState<{open:boolean; transaction?:FinancialTransaction|null; kind?:TransactionKind}>({open:false})
+  const [financialSnapshotModal, setFinancialSnapshotModal] = useState(false)
   const [selectedProductId, setSelectedProductId] = useState('')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [search, setSearch] = useState('')
@@ -131,7 +135,7 @@ export default function App() {
       if (!usage || !quota) return setStorageText('ذخیره‌سازی محلی مرورگر')
       setStorageText(`${faDecimal.format(usage/1024/1024)} از ${faDecimal.format(quota/1024/1024)} مگابایت`)
     }).catch(()=>setStorageText('ذخیره‌سازی محلی مرورگر'))
-  }, [purchases.length, products.length, transactions.length])
+  }, [purchases.length, products.length, transactions.length, financialSnapshots.length])
 
   useEffect(() => {
     if (loading) return
@@ -173,7 +177,14 @@ export default function App() {
   const currentTransactions = useMemo(() => transactions.filter(row => startOfPersianMonthISO(row.date) === financeMonth), [transactions, financeMonth])
   const currentPurchases = useMemo(() => purchases.filter(row => startOfPersianMonthISO(row.date) === financeMonth), [purchases, financeMonth])
   const financeChart = useMemo(() => cashflow.slice(-12).map(point => ({ ...point, label: formatMonth(point.month) })), [cashflow])
-  const financeMonths = useMemo(() => [...new Set([currentFinanceMonth, ...cashflow.map(point => point.month)])].sort().reverse(), [cashflow, currentFinanceMonth])
+  const financeMonths = useMemo(() => [...new Set([currentFinanceMonth, ...cashflow.map(point => point.month), ...financialSnapshots.map(snapshot => snapshot.month)])].sort().reverse(), [cashflow, financialSnapshots, currentFinanceMonth])
+  const benchmarks = useMemo(() => buildFinancialBenchmarks(cashflow, financialSnapshots, composite), [cashflow, financialSnapshots, composite])
+  const financeBenchmark = benchmarks.find(point => point.month === financeMonth)
+  const selectedFinancialSnapshot = financialSnapshots.find(snapshot => snapshot.month === financeMonth)
+  const lastYearFinanceBenchmark = benchmarks.find(point => point.month === shiftPersianMonthISO(financeMonth, -12))
+  const yearlyDollarIncomeChange = financeBenchmark?.incomeUsd != null && lastYearFinanceBenchmark?.incomeUsd != null ? percentageChange(lastYearFinanceBenchmark.incomeUsd, financeBenchmark.incomeUsd) : null
+  const yearlySavingsBalanceChange = financeBenchmark?.savingsBalanceUsd != null && lastYearFinanceBenchmark?.savingsBalanceUsd != null ? percentageChange(lastYearFinanceBenchmark.savingsBalanceUsd, financeBenchmark.savingsBalanceUsd) : null
+  const benchmarkChart = useMemo(() => benchmarks.slice(-12).map(point => ({ ...point, label: formatMonth(point.month) })), [benchmarks])
   const currentExpenseCategories = useMemo(() => {
     const productCategories = new Map(products.map(product => [product.id, product.category || 'بدون دسته‌بندی']))
     const sums = new Map<string, number>()
@@ -257,14 +268,15 @@ export default function App() {
     .sort((a, b) => (b.lastDate ?? '').localeCompare(a.lastDate ?? ''))
     .slice(0, 8), [stats])
   const money = (value: number, compact = settings.compactNumbers) => formatMoney(value, settings.currency, compact)
+  const dollarMoney = (value: number | null | undefined) => value == null ? '—' : formatMoney(value, 'دلار', false)
   const isDark = settings.theme === 'dark' || (settings.theme === 'system' && systemDark)
   const lastBackupAt = settings.lastBackupAt ? new Date(settings.lastBackupAt) : null
   const backupAgeDays = lastBackupAt && !Number.isNaN(lastBackupAt.getTime()) ? Math.floor((Date.now() - lastBackupAt.getTime()) / 86_400_000) : null
-  const backupDue = purchases.length + transactions.length >= 10 && (backupAgeDays == null || backupAgeDays >= BACKUP_REMINDER_DAYS)
+  const backupDue = purchases.length + transactions.length + financialSnapshots.length >= 10 && (backupAgeDays == null || backupAgeDays >= BACKUP_REMINDER_DAYS)
 
   if (loading) return <div className="app-loading" role="status" aria-live="polite"><div className="loading-mark"><LineIcon size={28}/></div><strong>قیمت‌نگار</strong><span>در حال آماده‌سازی داده‌های محلی…</span><div className="loading-bar"><i/></div></div>
 
-  function backupObject(exportedAt = new Date().toISOString()): BackupData { return { schema:'gheymat-negar', version:2, exportedAt, products, stores, purchases, transactions, settings: { ...settings, lastBackupAt: exportedAt } } }
+  function backupObject(exportedAt = new Date().toISOString()): BackupData { return { schema:'gheymat-negar', version:3, exportedAt, products, stores, purchases, transactions, financialSnapshots, settings: { ...settings, lastBackupAt: exportedAt } } }
 
   async function markBackup(exportedAt: string) {
     await db.settings.put({ ...settings, lastBackupAt: exportedAt })
@@ -289,34 +301,36 @@ export default function App() {
     const data = backupObject()
     downloadText(`gheymat-negar-purchases-${todayISO()}.csv`, purchasesToCsv(data), 'text/csv;charset=utf-8')
     downloadText(`gheymat-negar-transactions-${todayISO()}.csv`, transactionsToCsv(data), 'text/csv;charset=utf-8')
-    pushToast('CSV خریدها و دخل‌وخرج ساخته شد.')
+    downloadText(`gheymat-negar-financial-benchmarks-${todayISO()}.csv`, financialSnapshotsToCsv(data), 'text/csv;charset=utf-8')
+    pushToast('CSV خریدها، دخل‌وخرج و معیارهای مالی ساخته شد.')
   }
 
   async function importFile(file: File) {
     try {
       if (file.size > MAX_BACKUP_FILE_BYTES) throw new Error('حجم فایل پشتیبان بیشتر از ۵۰ مگابایت است و برای ورود مستقیم مناسب نیست.')
       const data = await parseBackup(await file.text(), backupPassword || undefined)
-      const fileSummary = `${faNumber.format(data.products.length)} کالا، ${faNumber.format(data.purchases.length)} خرید، ${faNumber.format(data.transactions.length)} تراکنش و ${faNumber.format(data.stores.length)} فروشگاه`
+      const fileSummary = `${faNumber.format(data.products.length)} کالا، ${faNumber.format(data.purchases.length)} خرید، ${faNumber.format(data.transactions.length)} تراکنش، ${faNumber.format(data.financialSnapshots.length)} معیار مالی و ${faNumber.format(data.stores.length)} فروشگاه`
       if (importMode === 'replace') {
         if (!await askConfirm('جایگزینی داده‌های فعلی', `${fileSummary} وارد می‌شود و تمام داده‌های فعلی جایگزین خواهند شد. بهتر است قبل از ادامه از داده فعلی خروجی بگیرید.`, 'جایگزین کن', true)) return
-        await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.settings], async () => {
-          await Promise.all([db.products.clear(), db.stores.clear(), db.purchases.clear(), db.transactions.clear(), db.settings.clear()])
-          await db.products.bulkAdd(data.products); await db.stores.bulkAdd(data.stores); await db.purchases.bulkAdd(data.purchases); await db.transactions.bulkAdd(data.transactions); await db.settings.put(data.settings)
+        await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.financialSnapshots, db.settings], async () => {
+          await Promise.all([db.products.clear(), db.stores.clear(), db.purchases.clear(), db.transactions.clear(), db.financialSnapshots.clear(), db.settings.clear()])
+          await db.products.bulkAdd(data.products); await db.stores.bulkAdd(data.stores); await db.purchases.bulkAdd(data.purchases); await db.transactions.bulkAdd(data.transactions); await db.financialSnapshots.bulkAdd(data.financialSnapshots); await db.settings.put(data.settings)
         })
       } else {
-        const { adoptIncomingCurrency } = resolveMergeCurrency(settings.currency, data.settings.currency, purchases.length + transactions.length, data.purchases.length + data.transactions.length)
-        const plan = planBackupMerge({ products, stores, purchases, transactions }, data)
+        const { adoptIncomingCurrency } = resolveMergeCurrency(settings.currency, data.settings.currency, purchases.length + transactions.length + financialSnapshots.length, data.purchases.length + data.transactions.length + data.financialSnapshots.length)
+        const plan = planBackupMerge({ products, stores, purchases, transactions, financialSnapshots }, data)
         const dedupeNote = plan.dedupedProducts || plan.dedupedStores
           ? ` ${faNumber.format(plan.dedupedProducts)} کالای همسان و ${faNumber.format(plan.dedupedStores)} فروشگاه هم‌نام با رکوردهای فعلی یکپارچه می‌شوند.`
           : ''
         const currencyNote = adoptIncomingCurrency ? ` چون هنوز رکورد مالی در داده فعلی نیست، واحد پول «${data.settings.currency}» از پشتیبان پذیرفته می‌شود.` : ''
         const mergeSummary = `${fileSummary} بررسی می‌شود. رکوردهای هم‌شناسه به‌روزرسانی می‌شوند، موارد همسان ادغام و تنظیمات نمایشی فعلی حفظ می‌شود.${dedupeNote}${currencyNote}`
         if (!await askConfirm('ادغام پشتیبان', mergeSummary, 'ادغام کن')) return
-        await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.settings], async () => {
+        await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.financialSnapshots, db.settings], async () => {
           await db.products.bulkPut(plan.productsToPut)
           await db.stores.bulkPut(plan.storesToPut)
           await db.purchases.bulkPut(plan.purchasesToPut)
           await db.transactions.bulkPut(plan.transactionsToPut)
+          await db.financialSnapshots.bulkPut(plan.financialSnapshotsToPut)
           await db.settings.put({ ...settings, currency: adoptIncomingCurrency ? data.settings.currency : settings.currency, lastBackupAt: undefined })
         })
       }
@@ -327,14 +341,14 @@ export default function App() {
   }
 
   async function clearAll() {
-    if (!await askConfirm('پاک کردن همه داده‌ها', 'تمام کالاها، فروشگاه‌ها، خریدها و تراکنش‌ها برای همیشه از این مرورگر حذف می‌شوند و این عمل برگشت‌پذیر نیست.', 'همه را پاک کن', true)) return
-    await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.settings], async()=>{ await db.transactions.clear(); await db.purchases.clear(); await db.stores.clear(); await db.products.clear(); await db.settings.put({ ...settings, lastBackupAt: undefined }) })
+    if (!await askConfirm('پاک کردن همه داده‌ها', 'تمام کالاها، فروشگاه‌ها، خریدها، تراکنش‌ها و معیارهای مالی برای همیشه از این مرورگر حذف می‌شوند و این عمل برگشت‌پذیر نیست.', 'همه را پاک کن', true)) return
+    await db.transaction('rw', [db.products, db.stores, db.purchases, db.transactions, db.financialSnapshots, db.settings], async()=>{ await db.financialSnapshots.clear(); await db.transactions.clear(); await db.purchases.clear(); await db.stores.clear(); await db.products.clear(); await db.settings.put({ ...settings, lastBackupAt: undefined }) })
     pushToast('همه داده‌ها پاک شدند.', 'info')
   }
 
   async function loadDemo() {
-    if (products.length || purchases.length || stores.length || transactions.length) return pushToast('داده نمونه فقط روی دیتابیس خالی اضافه می‌شود. ابتدا پشتیبان بگیرید و داده‌ها را پاک کنید.', 'info')
-    const demo = makeDemoData(); await db.products.bulkAdd(demo.products); await db.stores.bulkAdd(demo.stores); await db.purchases.bulkAdd(demo.purchases); await db.transactions.bulkAdd(demo.transactions); pushToast('داده نمونه اضافه شد.')
+    if (products.length || purchases.length || stores.length || transactions.length || financialSnapshots.length) return pushToast('داده نمونه فقط روی دیتابیس خالی اضافه می‌شود. ابتدا پشتیبان بگیرید و داده‌ها را پاک کنید.', 'info')
+    const demo = makeDemoData(); await db.products.bulkAdd(demo.products); await db.stores.bulkAdd(demo.stores); await db.purchases.bulkAdd(demo.purchases); await db.transactions.bulkAdd(demo.transactions); await db.financialSnapshots.bulkAdd(demo.financialSnapshots); pushToast('داده نمونه اضافه شد.')
   }
 
   async function persistStorage() {
@@ -355,6 +369,11 @@ export default function App() {
       await db.transactions.delete(row.id)
       pushToast(`${label} حذف شد.`, 'info')
     }
+  }
+  async function deleteFinancialSnapshot(row: FinancialSnapshot) {
+    if (!await askConfirm('حذف معیار مالی ماه', `نرخ دلار و مانده پس‌انداز ${formatMonth(row.month)} حذف شود؟ دخل‌وخرج این ماه دست‌نخورده می‌ماند.`, 'حذف معیار', true)) return
+    await db.financialSnapshots.delete(row.id)
+    pushToast('معیار مالی ماه حذف شد.', 'info')
   }
   async function toggleArchive(product: Product) { await db.products.put({...product, archived:!product.archived, updatedAt:new Date().toISOString()}); pushToast(product.archived?'کالا از آرشیو خارج شد.':'کالا آرشیو شد.', 'info') }
   async function deleteProduct(product: Product) {
@@ -506,7 +525,7 @@ export default function App() {
   const renderFinance = () => <>
     <div className="page-heading">
       <div><span className="eyebrow">حسابداری شخصی ساده</span><h1>دخل‌وخرج واقعی من</h1><p>خریدهای کالا خودکار جزو هزینه‌ها هستند؛ درآمدها و هزینه‌های دیگری مثل اجاره، قبض و رفت‌وآمد را اینجا ثبت کنید.</p></div>
-      <div className="button-row page-heading-actions"><button className="button primary" onClick={() => setTransactionModal({ open: true, kind: 'expense' })}><ArrowDownCircle size={18}/>ثبت هزینه</button><button className="button secondary" onClick={() => setTransactionModal({ open: true, kind: 'income' })}><ArrowUpCircle size={18}/>ثبت درآمد</button></div>
+      <div className="button-row page-heading-actions"><button className="button primary" onClick={() => setTransactionModal({ open: true, kind: 'expense' })}><ArrowDownCircle size={18}/>ثبت هزینه</button><button className="button secondary" onClick={() => setTransactionModal({ open: true, kind: 'income' })}><ArrowUpCircle size={18}/>ثبت درآمد</button><button className="button secondary" onClick={() => setFinancialSnapshotModal(true)}><DollarSign size={18}/>{selectedFinancialSnapshot ? 'ویرایش معیار دلار' : 'ثبت معیار دلار'}</button></div>
     </div>
 
     <section className="panel finance-month-picker"><label className="field"><span>ماه گزارش</span><select value={financeMonth} onChange={event => setFinanceMonth(event.target.value)}>{financeMonths.map(month => <option value={month} key={month}>{formatMonth(month)}{month === currentFinanceMonth ? ' (تا امروز)' : ''}</option>)}</select></label></section>
@@ -517,6 +536,26 @@ export default function App() {
       <StatCard label="مانده ماه انتخابی" value={money(financeIncome - financeExpense)} hint={financeIncome - financeExpense >= 0 ? 'درآمد منهای همه هزینه‌ها' : 'کسری ماه انتخابی'} tone={financeIncome - financeExpense === 0 ? 'neutral' : financeIncome - financeExpense > 0 ? 'down' : 'up'}/>
       <StatCard label="تغییر نسبت به ماه قبل" value={formatPct(monthExpenseChange)} hint={yearExpenseChange == null ? 'برای مقایسه سالانه داده کافی نیست' : `${formatPct(yearExpenseChange)} نسبت به ماه مشابه پارسال`} tone={pctTone(monthExpenseChange)}/>
     </div>
+
+    {!selectedFinancialSnapshot ? <div className="onboarding-callout benchmark-callout"><div className="onboarding-icon"><DollarSign size={20}/></div><div><strong>برای {formatMonth(financeMonth)} نرخ دلار ثبت نشده است</strong><span>نرخ معیار ابتدای ماه را وارد کنید تا درآمد، پس‌انداز ماه و مانده کل پس‌انداز به دلار سنجیده شوند.</span></div><button className="button primary small" onClick={() => setFinancialSnapshotModal(true)}>ثبت نرخ و پس‌انداز</button></div> : <>
+      <div className="stats-grid benchmark-stats">
+        <StatCard label="درآمد دلاری" value={dollarMoney(financeBenchmark?.incomeUsd)} hint={`${money(financeIncome)} ÷ نرخ ${money(selectedFinancialSnapshot.usdRate, false)}`}/>
+        <StatCard label="پس‌انداز دلاری این ماه" value={dollarMoney(financeBenchmark?.monthlySavingUsd)} hint={financeBenchmark?.savingsRatePct == null ? 'درآمدی برای محاسبه نرخ پس‌انداز نیست' : `نرخ پس‌انداز ${formatPct(financeBenchmark.savingsRatePct)}`} tone={growthTone(financeBenchmark?.monthlySavingUsd ?? null)}/>
+        <StatCard label="ارزش دلاری کل پس‌انداز" value={dollarMoney(financeBenchmark?.savingsBalanceUsd)} hint={financeBenchmark?.savingsBalance == null ? 'مانده کل پس‌انداز وارد نشده' : yearlySavingsBalanceChange == null ? money(financeBenchmark.savingsBalance) : `${formatPct(yearlySavingsBalanceChange)} نسبت به پارسال`} tone={growthTone(yearlySavingsBalanceChange)}/>
+        <StatCard label="رشد درآمد دلاری" value={formatPct(financeBenchmark?.dollarIncomeChangePct)} hint={yearlyDollarIncomeChange == null ? 'نسبت به ماه قبل' : `${formatPct(yearlyDollarIncomeChange)} نسبت به پارسال`} tone={growthTone(financeBenchmark?.dollarIncomeChangePct ?? null)}/>
+      </div>
+
+      <section className="panel benchmark-panel">
+        <div className="panel-head"><div><h2>درآمد در برابر دلار و تورم شخصی</h2><p>تورم شخصی از تغییر سبد قیمت‌های ثبت‌شده شما محاسبه می‌شود؛ نرخ دلار و مانده کل پس‌انداز دستی هستند.</p></div><div className="row-actions"><button className="icon-button tiny" title="ویرایش معیار" aria-label="ویرایش معیار مالی" onClick={() => setFinancialSnapshotModal(true)}><Pencil size={15}/></button><button className="icon-button tiny danger-icon" title="حذف معیار" aria-label="حذف معیار مالی" onClick={() => deleteFinancialSnapshot(selectedFinancialSnapshot)}><Trash2 size={15}/></button></div></div>
+        <div className="benchmark-summary">
+          <div><span>رشد اسمی درآمد</span><strong className={`tone-${growthTone(financeBenchmark?.nominalIncomeChangePct ?? null)}`}>{formatPct(financeBenchmark?.nominalIncomeChangePct)}</strong><small>نسبت به ماه قبل</small></div>
+          <div><span>تورم شخصی</span><strong className={`tone-${pctTone(financeBenchmark?.personalInflationPct ?? null)}`}>{formatPct(financeBenchmark?.personalInflationPct)}</strong><small>بر پایه سبد واقعی کالاها</small></div>
+          <div><span>رشد واقعی درآمد</span><strong className={`tone-${growthTone(financeBenchmark?.realIncomeChangePct ?? null)}`}>{formatPct(financeBenchmark?.realIncomeChangePct)}</strong><small>پس از کسر اثر تورم شخصی</small></div>
+        </div>
+        {benchmarkChart.some(point => point.incomeUsd != null || point.savingsBalanceUsd != null) ? <div className="chart-lg benchmark-chart"><ResponsiveContainer width="100%" height="100%"><LineChart data={benchmarkChart} margin={{ top: 6, right: 12, bottom: 10, left: 8 }}><CartesianGrid strokeDasharray="4 4" vertical={false}/><XAxis dataKey="label" tickMargin={10} minTickGap={24}/><YAxis orientation="right" tickFormatter={value => faNumber.format(Number(value))} width={76}/><Tooltip content={<ChartTooltip isMoney currency="دلار" series={[{ key: 'incomeUsd', label: 'درآمد دلاری' }, { key: 'savingsBalanceUsd', label: 'کل پس‌انداز دلاری' }]}/>} /><Line type="monotone" dataKey="incomeUsd" connectNulls stroke="var(--chart-1)" strokeWidth={3} dot={{ r: 3 }}/><Line type="monotone" dataKey="savingsBalanceUsd" connectNulls stroke="var(--chart-4)" strokeWidth={3} dot={{ r: 3 }}/></LineChart></ResponsiveContainer></div> : null}
+        <div className="benchmark-footnote"><Info size={16}/><span>نرخ ثبت‌شده برای {formatDate(selectedFinancialSnapshot.rateDate)} است{selectedFinancialSnapshot.note ? `؛ ${selectedFinancialSnapshot.note}` : ''}. نتیجه‌ها فقط برای خودسنجی هستند و توصیه سرمایه‌گذاری محسوب نمی‌شوند.</span></div>
+      </section>
+    </>}
 
     <div className="finance-grid">
       <section className="panel panel-wide">
@@ -585,7 +624,7 @@ export default function App() {
       <section className="panel">
         <div className="settings-title"><div className="settings-icon"><Sun size={22}/></div><div><h2>نمایش</h2><p>تنظیمات ظاهری روی همین دستگاه ذخیره می‌شوند.</p></div></div>
         <div className="theme-picker"><button className={settings.theme === 'system' ? 'active' : ''} onClick={() => setTheme('system')}><Settings size={18}/>سیستم</button><button className={settings.theme === 'light' ? 'active' : ''} onClick={() => setTheme('light')}><Sun size={18}/>روشن</button><button className={settings.theme === 'dark' ? 'active' : ''} onClick={() => setTheme('dark')}><Moon size={18}/>تیره</button></div>
-        <label className="field"><span>واحد پول</span><input key={settings.currency} defaultValue={settings.currency} disabled={purchases.length + transactions.length > 0} onBlur={event => db.settings.put({ ...settings, currency: event.target.value.trim() || 'تومان' })} placeholder="تومان"/><small className="field-help">{purchases.length + transactions.length ? 'برای جلوگیری از برچسب‌گذاری اشتباه مبالغ قبلی، واحد پول بعد از اولین رکورد مالی قفل می‌شود.' : 'این گزینه واحد نمایش همه مبالغ است؛ قبل از شروع ثبت داده آن را مشخص کنید.'}</small></label>
+        <label className="field"><span>واحد پول</span><input key={settings.currency} defaultValue={settings.currency} disabled={purchases.length + transactions.length + financialSnapshots.length > 0} onBlur={event => db.settings.put({ ...settings, currency: event.target.value.trim() || 'تومان' })} placeholder="تومان"/><small className="field-help">{purchases.length + transactions.length + financialSnapshots.length ? 'برای جلوگیری از برچسب‌گذاری اشتباه مبالغ قبلی، واحد پول بعد از اولین رکورد مالی قفل می‌شود.' : 'این گزینه واحد نمایش همه مبالغ است؛ قبل از شروع ثبت داده آن را مشخص کنید.'}</small></label>
         <label className="switch-row"><div><strong>نمایش اعداد فشرده</strong><small>برای کارت‌ها و نمودارها از نمایش‌هایی مثل «۱٫۲ میلیون» استفاده شود.</small></div><input type="checkbox" checked={settings.compactNumbers} onChange={event => db.settings.put({ ...settings, compactNumbers: event.target.checked })}/></label>
       </section>
 
@@ -621,6 +660,7 @@ export default function App() {
     <Modal open={productModal.open} title={productModal.product?'ویرایش کالا':'افزودن کالای جدید'} onClose={()=>setProductModal({open:false})} wide><ProductForm product={productModal.product} products={products} purchaseCount={productModal.product ? purchases.filter(row => row.productId === productModal.product!.id).length : 0} onDone={()=>setProductModal({open:false})} onCancel={()=>setProductModal({open:false})} pushToast={pushToast}/></Modal>
     <Modal open={purchaseModal.open} title={purchaseModal.purchase?'ویرایش خرید':'ثبت خرید جدید'} onClose={()=>setPurchaseModal({open:false})}><PurchaseForm key={`${purchaseModal.purchase?.id??'new'}-${purchaseModal.productId??''}`} products={products} stores={stores} purchase={purchaseModal.purchase} initialProductId={purchaseModal.productId} currency={settings.currency} onDone={()=>setPurchaseModal({open:false})} onCancel={()=>setPurchaseModal({open:false})} pushToast={pushToast}/></Modal>
     <Modal open={transactionModal.open} title={transactionModal.transaction?'ویرایش تراکنش':transactionModal.kind==='income'?'ثبت درآمد':'ثبت هزینه'} onClose={()=>setTransactionModal({open:false})}><TransactionForm key={`${transactionModal.transaction?.id??'new'}-${transactionModal.kind??''}`} transactions={transactions} transaction={transactionModal.transaction} initialKind={transactionModal.kind} currency={settings.currency} onDone={()=>setTransactionModal({open:false})} onCancel={()=>setTransactionModal({open:false})} pushToast={pushToast}/></Modal>
+    <Modal open={financialSnapshotModal} title={selectedFinancialSnapshot ? `ویرایش معیار ${formatMonth(financeMonth)}` : `ثبت معیار ${formatMonth(financeMonth)}`} onClose={()=>setFinancialSnapshotModal(false)}><FinancialSnapshotForm key={`${financeMonth}-${selectedFinancialSnapshot?.updatedAt ?? 'new'}`} month={financeMonth} snapshot={selectedFinancialSnapshot} currency={settings.currency} onDone={()=>setFinancialSnapshotModal(false)} onCancel={()=>setFinancialSnapshotModal(false)} pushToast={pushToast}/></Modal>
     <Modal open={!!renameTarget} title="ویرایش نام فروشگاه" onClose={()=>setRenameTarget(null)}><form className="form-grid" onSubmit={saveStoreRename}><label className="field field-span-2"><span>نام فروشگاه</span><input autoFocus value={renameValue} onChange={e=>setRenameValue(e.target.value)} required/></label><div className="form-actions field-span-2"><button type="submit" className="button primary"><Check size={18}/>ذخیره</button><button type="button" className="button ghost" onClick={()=>setRenameTarget(null)}>انصراف</button></div></form></Modal>
     <ConfirmDialog open={!!confirmState} title={confirmState?.title??''} body={confirmState?.body??''} confirmText={confirmState?.confirmText} danger={confirmState?.danger} onClose={()=>closeConfirm(false)} onConfirm={()=>closeConfirm(true)}/>
     <div className="toast-stack" role="status" aria-live="polite" aria-atomic="true">{toasts.map(t=><div className={`toast ${t.kind}`} key={t.id}>{t.kind==='ok'?<Check size={17}/>:t.kind==='error'?<X size={17}/>:<Info size={17}/>}<span>{t.text}</span></div>)}</div>
