@@ -1,3 +1,4 @@
+import { comparePersianText } from '../lib/text'
 import { useState, type FormEvent } from 'react'
 import { Check } from 'lucide-react'
 import { db, uid } from '../lib/db'
@@ -105,7 +106,13 @@ interface PurchaseFormProps {
 
 export function PurchaseForm({ products, stores, purchase, initialProductId, currency, onDone, onCancel, pushToast }: PurchaseFormProps) {
   const initialStore = purchase?.storeId ? stores.find(store => store.id === purchase.storeId)?.name ?? '' : ''
-  const [productId, setProductId] = useState(purchase?.productId ?? initialProductId ?? products.find(product => !product.archived)?.id ?? '')
+  const selectableProducts = products
+    .filter(product => !product.archived || product.id === purchase?.productId)
+    .sort((left, right) => comparePersianText(left.name, right.name)
+      || comparePersianText(left.brand ?? '', right.brand ?? '')
+      || left.createdAt.localeCompare(right.createdAt)
+      || left.id.localeCompare(right.id))
+  const [productId, setProductId] = useState(purchase?.productId ?? initialProductId ?? selectableProducts[0]?.id ?? '')
   const [date, setDate] = useState(purchase?.date ?? todayISO())
   const [storeName, setStoreName] = useState(initialStore)
   const [quantity, setQuantity] = useState(String(purchase?.quantity ?? 1))
@@ -185,7 +192,7 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
     <label className="field field-span-2">
       <span>کالا *</span>
       <select value={productId} onChange={event => setProductId(event.target.value)} required>
-        {products.filter(item => !item.archived || item.id === productId).map(item => <option key={item.id} value={item.id}>{item.name}{item.brand ? ` — ${item.brand}` : ''}</option>)}
+        {selectableProducts.map(item => <option key={item.id} value={item.id}>{item.name}{item.brand ? ` — ${item.brand}` : ''}</option>)}
       </select>
     </label>
     <div className={`field ${showDateError ? 'field-invalid' : ''}`}>
