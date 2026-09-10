@@ -41,13 +41,13 @@ export function ChartTooltip({
   const shownValue = isMoney
     ? formatMoney(value, currency, compactMoney)
     : `${faDecimal.format(value)}${suffix}`
-  const seriesValues = series?.map(item => ({
-    ...item,
-    value: Number(payload.find(entry => String(entry.dataKey) === item.key)?.value ?? 0),
-  }))
+  const seriesValues = series?.map(item => {
+    const rawValue = payload.find(entry => String(entry.dataKey) === item.key)?.value
+    return { ...item, value: rawValue == null ? null : Number(rawValue) }
+  })
 
   return <div className="chart-tooltip">
     {shownLabel ? <div>{shownLabel}</div> : null}
-    {seriesValues?.length ? seriesValues.map(item => <strong key={item.key}>{item.label}: {isMoney ? formatMoney(item.value, currency, compactMoney) : `${faDecimal.format(item.value)}${suffix}`}</strong>) : <strong>{shownValue}</strong>}
+    {seriesValues?.length ? seriesValues.map(item => <strong key={item.key}>{item.label}: {item.value == null ? '—' : isMoney ? formatMoney(item.value, currency, compactMoney) : `${faDecimal.format(item.value)}${suffix}`}</strong>) : <strong>{shownValue}</strong>}
   </div>
 }

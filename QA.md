@@ -1,4 +1,4 @@
-# QA / Release checklist — 1.4.0
+# QA / Release checklist — 1.5.0
 
 ## بررسی‌های انجام‌شده روی سورس این Release
 
@@ -11,6 +11,8 @@
   - نگاشت تاریخ ISO به تقویم شمسی و شروع/ناوبری ماه فارسی
   - تجمیع خریدها، درآمدها و هزینه‌ها در cashflow ماه شمسی
   - محاسبه تغییر مخارج و سازگاری Backup نسخه 1 بدون Transaction
+  - محاسبه درآمد/پس‌انداز دلاری و رشد واقعی درآمد در برابر شاخص شخصی
+  - یکپارچگی FinancialSnapshot و سازگاری Backup نسخه‌های 1 و 2 بدون آن
 - syntax check برای scriptهای Node
 - اجرای `build-sw.mjs` روی یک `dist` نمونه و syntax check فایل Service Worker تولیدشده
 - بررسی breakpointهای CSS برای انحصاری بودن Sidebar / Drawer / Bottom Navigation
@@ -49,6 +51,11 @@ npm run preview
 14. خرید ثبت‌شده بدون ایجاد Transaction جداگانه در جمع هزینه و سبد هزینه همان ماه لحاظ شود.
 15. بین ماه‌های گزارش جابه‌جا شوید؛ مقایسه ماه قبل/سال قبل و فهرست رکوردهای همان ماه به‌روز شوند.
 16. Backup نسخه 2 با Transactionها Replace و Merge شود و Backup نسخه 1 با آرایه Transaction خالی وارد شود.
+17. برای دو ماه متوالی نرخ دلار و درآمد ثبت کنید؛ درآمد دلاری و تغییر ماهانه باید از تقسیم درآمد بر نرخ هر ماه ساخته شود.
+18. مانده کل پس‌انداز را ثبت کنید و مطمئن شوید با «پس‌انداز این ماه» (درآمد منهای هزینه) اشتباه گرفته نمی‌شود.
+19. نرخ با تاریخ بیرون از ماه انتخابی، نرخ صفر و مانده منفی پذیرفته نشوند.
+20. با وجود قیمت در دو ماه شمسی متوالی، رشد اسمی، تورم شخصی و رشد واقعی درآمد نمایش داده شوند؛ در نبود داده کافی خط تیره دیده شود.
+21. حذف معیار مالی نباید خریدها یا تراکنش‌های همان ماه را حذف کند.
 
 
 ## Regression checks for automatic basket weighting
@@ -60,7 +67,7 @@ npm run preview
 - در تست دو کالا با رشد قیمت متفاوت، کالایی که سابقه هزینه ماهانه بیشتری دارد اثر بیشتری بر شاخص ترکیبی می‌گذارد.
 - متن داشبورد و جزئیات کالا دیگر به وزن دستی اشاره نمی‌کند.
 
-## UX regression checks for 1.4.0
+## UX regression checks for 1.5.0
 
 - Open each primary tab after scrolling down another page; the window starts at the top.
 - On the Products page, confirm the primary “ثبت خرید” action appears before the secondary “کالای جدید” action in RTL visual order.

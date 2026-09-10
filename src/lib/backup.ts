@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { BackupData } from './types'
 import { normalizePersianText } from './text'
+import { startOfPersianMonthISO } from './persian-date'
 
 const idSchema = z.string().min(1).max(160)
 const shortText = z.string().max(500)
@@ -51,6 +52,17 @@ const transactionSchema = z.object({
   updatedAt: isoDateTime
 })
 
+const financialSnapshotSchema = z.object({
+  id: idSchema,
+  month: isoDate,
+  usdRate: z.number().positive().finite(),
+  rateDate: isoDate,
+  savingsBalance: z.number().nonnegative().finite().optional(),
+  note: longText.optional(),
+  createdAt: isoDateTime,
+  updatedAt: isoDateTime
+})
+
 const settingsSchema = z.object({
   id: z.literal('main'),
   currency: shortText.min(1),
@@ -61,12 +73,13 @@ const settingsSchema = z.object({
 
 const backupSchema = z.object({
   schema: z.literal('gheymat-negar'),
-  version: z.union([z.literal(1), z.literal(2)]),
+  version: z.union([z.literal(1), z.literal(2), z.literal(3)]),
   exportedAt: isoDateTime,
   products: z.array(productSchema).max(100_000),
   stores: z.array(storeSchema).max(100_000),
   purchases: z.array(purchaseSchema).max(1_000_000),
   transactions: z.array(transactionSchema).max(1_000_000).default([]),
+  financialSnapshots: z.array(financialSnapshotSchema).max(100_000).default([]),
   settings: settingsSchema
 })
 
@@ -104,11 +117,22 @@ function assertUniqueIds<T extends { id: string }>(rows: T[], label: string) {
 }
 
 export function validateBackupIntegrity(data: BackupData) {
-  const normalized = { ...data, transactions: data.transactions ?? [] }
+  const normalized = { ...data, transactions: data.transactions ?? [], financialSnapshots: data.financialSnapshots ?? [] }
   assertUniqueIds(normalized.products, 'کالاها')
   assertUniqueIds(normalized.stores, 'فروشگاه‌ها')
   assertUniqueIds(normalized.purchases, 'خریدها')
   assertUniqueIds(normalized.transactions, 'تراکنش‌ها')
+  assertUniqueIds(normalized.financialSnapshots, 'معیارهای مالی')
+
+  const snapshotMonths = new Set<string>()
+  const today = new Date().toISOString().slice(0, 10)
+  for (const snapshot of normalized.financialSnapshots) {
+    if (snapshot.month !== startOfPersianMonthISO(snapshot.month)) throw new Error('ماه یک معیار مالی باید شروع ماه هجری شمسی باشد.')
+    if (startOfPersianMonthISO(snapshot.rateDate) !== snapshot.month) throw new Error('تاریخ نرخ دلار باید داخل ماه معیار مالی باشد.')
+    if (snapshot.rateDate > today) throw new Error('تاریخ نرخ دلار نمی‌تواند در آینده باشد.')
+    if (snapshotMonths.has(snapshot.month)) throw new Error('فایل پشتیبان برای یک ماه بیش از یک معیار مالی دارد.')
+    snapshotMonths.add(snapshot.month)
+  }
 
   const productIds = new Set(normalized.products.map(product => product.id))
   const storeIds = new Set(normalized.stores.map(store => store.id))
@@ -168,7 +192,7 @@ export async function encryptBackup(data: BackupData, password: string) {
     false,
     ['encrypt']
   )
-  const plaintext = new TextEncoder().encode(JSON.stringify(validateBackupIntegrity({ ...data, transactions: data.transactions ?? [] })))
+  const plaintext = new TextEncoder().encode(JSON.stringify(validateBackupIntegrity({ ...data, transactions: data.transactions ?? [], financialSnapshots: data.financialSnapshots ?? [] })))
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext))
 
   return JSON.stringify({
@@ -282,6 +306,18 @@ export function transactionsToCsv(data: BackupData) {
     transaction.category,
     transaction.amount,
     transaction.note ?? ''
+  ])
+  return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
+}
+
+export function financialSnapshotsToCsv(data: BackupData) {
+  const headers = ['ماه', 'تاریخ نرخ', 'قیمت یک دلار', 'مانده کل پس‌انداز', 'یادداشت']
+  const rows = data.financialSnapshots.map(snapshot => [
+    snapshot.month,
+    snapshot.rateDate,
+    snapshot.usdRate,
+    snapshot.savingsBalance ?? '',
+    snapshot.note ?? ''
   ])
   return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
 }

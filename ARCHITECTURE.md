@@ -1,4 +1,4 @@
-# معماری قیمت‌نگار 1.4.0
+# معماری قیمت‌نگار 1.5.0
 
 ## تاریخ و تقویم
 
@@ -44,6 +44,15 @@
 - Purchase در Transaction کپی نمی‌شود. لایه analytics هنگام ساخت دفتر و cashflow، `Purchase.totalPaid` را به‌عنوان هزینه کالایی با Transactionهای مستقل ترکیب می‌کند.
 - جدول `transactions` در migration نسخه 3 Dexie افزوده می‌شود؛ جدول‌ها و داده‌های نسخه‌های قبلی حفظ می‌شوند.
 
+### FinancialSnapshot
+
+- برای هر `month` شمسی دقیقاً یک snapshot وجود دارد؛ مقدار ماه به‌صورت ISO روز اول همان ماه شمسی ذخیره می‌شود.
+- `usdRate > 0` است و `rateDate` باید در همان ماه و حداکثر امروز باشد.
+- `savingsBalance` اختیاری و نامنفی است و موجودی کل را نشان می‌دهد؛ با جریان پس‌انداز ماهانه (`income - expense`) یکی نیست.
+- تبدیل دلاری با تقسیم مبلغ بر نرخ همان snapshot انجام می‌شود. تغییر ماهانه فقط در صورت وجود snapshot ماه شمسی دقیقاً قبل محاسبه می‌شود.
+- رشد واقعی درآمد از نسبت رشد اسمی به رشد شاخص سبد شخصی در دو ماه متوالی محاسبه می‌شود.
+- جدول `financialSnapshots` در migration نسخه 4 Dexie افزوده می‌شود و داده‌های قبلی را تغییر نمی‌دهد.
+
 ### محاسبه مبلغ خرید
 
 - ورودی اصلی خرید `quantity` و `totalPaid` واقعی است.
@@ -76,9 +85,9 @@
 
 ### Currency
 
-`currency` یک label سراسری برای همه مبالغ است و تبدیل نرخ ارز انجام نمی‌دهد. برای جلوگیری از relabel شدن مبالغ تاریخی:
+`currency` برچسب سراسری مبالغ پایه است؛ تبدیل دلار فقط در گزارش مالی و با نرخ snapshot ماه انجام می‌شود. برای جلوگیری از relabel شدن مبالغ تاریخی:
 
-- پس از اولین Purchase یا FinancialTransaction، ویرایش واحد پول در Settings قفل می‌شود.
+- پس از اولین Purchase، FinancialTransaction یا FinancialSnapshot، ویرایش واحد پول در Settings قفل می‌شود.
 - Merge وقتی هر دو طرف رکورد مالی دارند و currency متفاوت است، متوقف می‌شود.
 - اگر داده محلی هنوز هیچ رکورد مالی ندارد، Merge می‌تواند currency پشتیبان را بپذیرد.
 
@@ -131,12 +140,13 @@ Indexₜ = Indexₜ₋₁ × R
 - وجود Store برای `storeId`های موجود
 - نبود Store تکراری پس از normalization
 - سازگاری محاسبات مالی Purchase
+- یکتایی ماه FinancialSnapshot و قرار داشتن تاریخ نرخ در همان ماه شمسی
 
 فایل بزرگ‌تر از ۵۰MB در UI Import رد می‌شود تا parse سنگین ناخواسته روی main thread رخ ندهد.
 
 ### Replace
 
-پنج store شامل Product، Store، Purchase، FinancialTransaction و Settings در یک transaction پاک می‌شوند و سپس Backup معتبر جایگزین می‌شود. تنظیمات Backup نیز جایگزین می‌شوند.
+شش store شامل Product، Store، Purchase، FinancialTransaction، FinancialSnapshot و Settings در یک transaction پاک می‌شوند و سپس Backup معتبر جایگزین می‌شود. تنظیمات Backup نیز جایگزین می‌شوند.
 
 ### Merge
 
@@ -146,6 +156,7 @@ Indexₜ = Indexₜ₋₁ × R
 - Product همسان بر اساس `name + brand + unit` به ID محلی remap می‌شود.
 - Purchaseهای وابسته با IDهای remap‌شده ذخیره می‌شوند.
 - FinancialTransactionها با semantics upsert و بر اساس شناسه ادغام می‌شوند.
+- FinancialSnapshotها بر اساس ماه ادغام می‌شوند؛ snapshot ورودی برای همان ماه جای مقدار محلی را می‌گیرد و شناسه محلی حفظ می‌شود.
 - رکوردهای هم‌شناسه با `bulkPut` upsert می‌شوند.
 - تغییر `unit` برای Product هم‌شناسه‌ای که history دارد باعث توقف Merge می‌شود.
 - ناسازگاری currency طبق invariant بالا باعث توقف Merge می‌شود.

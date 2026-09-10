@@ -1,5 +1,5 @@
-import type { FinancialTransaction, Product, Purchase, Store } from './types'
-import { startOfPersianMonthISO } from './persian-date'
+import type { FinancialSnapshot, FinancialTransaction, Product, Purchase, Store } from './types'
+import { persianDateParts, shiftPersianMonthISO, startOfPersianMonthISO } from './persian-date'
 
 export interface ProductStat {
   product: Product
@@ -28,6 +28,20 @@ export interface CashflowPoint {
   expense: number
   income: number
   net: number
+}
+
+export interface FinancialBenchmarkPoint extends CashflowPoint {
+  usdRate: number | null
+  incomeUsd: number | null
+  monthlySaving: number
+  monthlySavingUsd: number | null
+  savingsRatePct: number | null
+  savingsBalance: number | null
+  savingsBalanceUsd: number | null
+  nominalIncomeChangePct: number | null
+  dollarIncomeChangePct: number | null
+  personalInflationPct: number | null
+  realIncomeChangePct: number | null
 }
 
 const safePct = (from: number, to: number) => from > 0 ? ((to / from) - 1) * 100 : null
@@ -88,19 +102,16 @@ export function periodProductChange(rows: Purchase[]) {
 }
 
 function monthKey(date: string) {
-  return date.slice(0, 7)
+  return startOfPersianMonthISO(date)
 }
 
 function monthNumber(month: string) {
-  const [year, value] = month.split('-').map(Number)
-  return year * 12 + (value - 1)
+  const parts = persianDateParts(month)
+  return parts ? parts.year * 12 + (parts.month - 1) : 0
 }
 
 function previousMonth(month: string) {
-  const value = monthNumber(month) - 1
-  const year = Math.floor(value / 12)
-  const monthValue = (value % 12) + 1
-  return `${year}-${String(monthValue).padStart(2, '0')}`
+  return shiftPersianMonthISO(month, -1)
 }
 
 function inclusiveMonthCount(from: string, to: string) {
@@ -313,6 +324,57 @@ export function percentageChange(from: number, to: number) {
 
 export function transactionTotal(rows: FinancialTransaction[], kind?: FinancialTransaction['kind']) {
   return rows.reduce((sum, row) => sum + (kind && row.kind !== kind ? 0 : row.amount), 0)
+}
+
+export function buildFinancialBenchmarks(
+  cashflow: CashflowPoint[],
+  snapshots: FinancialSnapshot[],
+  priceIndex: CompositePoint[],
+): FinancialBenchmarkPoint[] {
+  const cashflowByMonth = new Map(cashflow.map(point => [point.month, point]))
+  const snapshotByMonth = new Map(snapshots.map(snapshot => [snapshot.month, snapshot]))
+  const indexByMonth = new Map(priceIndex.map(point => [point.month, point.index]))
+  const months = [...new Set([...cashflowByMonth.keys(), ...snapshotByMonth.keys()])].sort()
+
+  const base = new Map<string, FinancialBenchmarkPoint>()
+  for (const month of months) {
+    const flow = cashflowByMonth.get(month) ?? { month, purchaseExpense: 0, otherExpense: 0, expense: 0, income: 0, net: 0 }
+    const snapshot = snapshotByMonth.get(month)
+    const usdRate = snapshot?.usdRate && snapshot.usdRate > 0 ? snapshot.usdRate : null
+    const monthlySaving = flow.income - flow.expense
+    base.set(month, {
+      ...flow,
+      usdRate,
+      incomeUsd: usdRate ? flow.income / usdRate : null,
+      monthlySaving,
+      monthlySavingUsd: usdRate ? monthlySaving / usdRate : null,
+      savingsRatePct: flow.income > 0 ? (monthlySaving / flow.income) * 100 : null,
+      savingsBalance: snapshot?.savingsBalance ?? null,
+      savingsBalanceUsd: usdRate && snapshot?.savingsBalance != null ? snapshot.savingsBalance / usdRate : null,
+      nominalIncomeChangePct: null,
+      dollarIncomeChangePct: null,
+      personalInflationPct: null,
+      realIncomeChangePct: null,
+    })
+  }
+
+  return months.map(month => {
+    const current = base.get(month)!
+    const previous = base.get(shiftPersianMonthISO(month, -1))
+    const currentIndex = indexByMonth.get(month)
+    const previousIndex = indexByMonth.get(shiftPersianMonthISO(month, -1))
+    const nominalIncomeChangePct = previous ? percentageChange(previous.income, current.income) : null
+    const dollarIncomeChangePct = previous?.incomeUsd != null && current.incomeUsd != null
+      ? percentageChange(previous.incomeUsd, current.incomeUsd)
+      : null
+    const personalInflationPct = previousIndex != null && currentIndex != null
+      ? percentageChange(previousIndex, currentIndex)
+      : null
+    const realIncomeChangePct = nominalIncomeChangePct != null && personalInflationPct != null
+      ? (((1 + nominalIncomeChangePct / 100) / (1 + personalInflationPct / 100)) - 1) * 100
+      : null
+    return { ...current, nominalIncomeChangePct, dollarIncomeChangePct, personalInflationPct, realIncomeChangePct }
+  })
 }
 
 export function lastNDaysISO(days: number) {

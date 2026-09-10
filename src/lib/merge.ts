@@ -1,4 +1,4 @@
-import type { BackupData, FinancialTransaction, Product, Purchase, Store } from './types'
+import type { BackupData, FinancialSnapshot, FinancialTransaction, Product, Purchase, Store } from './types'
 import { makeSearchKey, normalizePersianText, sameNormalizedText } from './text'
 
 export interface MergePlan {
@@ -6,6 +6,7 @@ export interface MergePlan {
   storesToPut: Store[]
   purchasesToPut: Purchase[]
   transactionsToPut: FinancialTransaction[]
+  financialSnapshotsToPut: FinancialSnapshot[]
   dedupedProducts: number
   dedupedStores: number
 }
@@ -26,7 +27,7 @@ export function resolveMergeCurrency(localCurrency: string, incomingCurrency: st
 }
 
 export function planBackupMerge(
-  local: Pick<BackupData, 'products' | 'stores' | 'purchases' | 'transactions'>,
+  local: Pick<BackupData, 'products' | 'stores' | 'purchases' | 'transactions' | 'financialSnapshots'>,
   incoming: BackupData,
 ): MergePlan {
   const localStoreById = new Map(local.stores.map(store => [store.id, store]))
@@ -100,5 +101,19 @@ export function planBackupMerge(
     storeId: purchase.storeId ? (storeIdMap.get(purchase.storeId) ?? purchase.storeId) : undefined,
   }))
 
-  return { productsToPut, storesToPut, purchasesToPut, transactionsToPut: incoming.transactions, dedupedProducts, dedupedStores }
+  const localSnapshotIdByMonth = new Map(local.financialSnapshots.map(snapshot => [snapshot.month, snapshot.id]))
+  const usedSnapshotIds = new Set(local.financialSnapshots.map(snapshot => snapshot.id))
+  const financialSnapshotsToPut = incoming.financialSnapshots.map(snapshot => {
+    const sameMonthId = localSnapshotIdByMonth.get(snapshot.month)
+    let id = sameMonthId ?? snapshot.id
+    if (!sameMonthId && usedSnapshotIds.has(id)) {
+      id = `fin_${snapshot.month}`
+      let suffix = 2
+      while (usedSnapshotIds.has(id)) id = `fin_${snapshot.month}_${suffix++}`
+    }
+    usedSnapshotIds.add(id)
+    return { ...snapshot, id }
+  })
+
+  return { productsToPut, storesToPut, purchasesToPut, transactionsToPut: incoming.transactions, financialSnapshotsToPut, dedupedProducts, dedupedStores }
 }
