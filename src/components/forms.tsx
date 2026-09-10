@@ -1,9 +1,10 @@
+import { comparePersianText } from '../lib/text'
 import { useState, type FormEvent } from 'react'
 import { Check } from 'lucide-react'
 import { db, uid } from '../lib/db'
 import { PersianDatePicker } from './date-picker'
 import { formatMoney, todayISO } from '../lib/format'
-import { comparePersianText, normalizeStoreName, sameNormalizedText } from '../lib/text'
+import { normalizeStoreName, sameNormalizedText } from '../lib/text'
 import type { FinancialTransaction, Product, Purchase, Store, TransactionKind } from '../lib/types'
 
 type ToastKind = 'ok' | 'error' | 'info'
