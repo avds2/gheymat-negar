@@ -44,6 +44,7 @@ assert.equal(persianDate.startOfPersianMonthISO('2026-09-02'), '2026-08-23')
 assert.equal(persianDate.getPersianCalendarMonth('2026-09-02').days.length, 31)
 assert.equal(persianDate.previousPersianMonthISO('2026-09-02'), '2026-07-23')
 assert.equal(persianDate.nextPersianMonthISO('2026-09-02'), '2026-09-23')
+assert.equal(persianDate.shiftPersianMonthISO('2026-09-02', -1), '2026-07-23')
 
 const now = '2026-08-27T00:00:00.000Z'
 const product = (id, name, brand = '') => ({
@@ -79,36 +80,54 @@ assert.equal(weightedIndex.length, 2)
 assert.ok(weightedIndex[1].index > 106 && weightedIndex[1].index < 107)
 assert.equal(Math.round(weightedIndex[1].coveragePct), 100)
 
+const financialTransactions = [
+  { id: 't1', kind: 'income', date: '2026-08-25', amount: 1_000, category: 'حقوق', createdAt: now, updatedAt: now },
+  { id: 't2', kind: 'expense', date: '2026-08-26', amount: 250, category: 'مسکن', createdAt: now, updatedAt: now },
+]
+const cashflow = analytics.buildMonthlyCashflow(
+  [purchase('cash-buy', 'p1', '2026-08-24', 100, undefined, 2)],
+  financialTransactions,
+)
+assert.deepEqual(cashflow, [{ month: '2026-08-23', purchaseExpense: 200, otherExpense: 250, expense: 450, income: 1_000, net: 550 }])
+assert.equal(analytics.percentageChange(400, 500), 25)
+assert.equal(analytics.percentageChange(0, 500), null)
+
 const incoming = {
-  schema: 'gheymat-negar', version: 1, exportedAt: now,
+  schema: 'gheymat-negar', version: 2, exportedAt: now,
   products: [product('p2', 'برنج')], stores: [{ id: 's2', name: 'فروشگاه كالا', createdAt: now }],
   purchases: [purchase('c', 'p2', '2026-04-02', 125, 's2')],
+  transactions: financialTransactions,
   settings: { id: 'main', currency: 'تومان', theme: 'system', compactNumbers: false },
 }
-const plan = merge.planBackupMerge({ products, stores: [{ id: 's1', name: 'فروشگاه کالا', createdAt: now }], purchases }, incoming)
+const plan = merge.planBackupMerge({ products, stores: [{ id: 's1', name: 'فروشگاه کالا', createdAt: now }], purchases, transactions: [] }, incoming)
 assert.equal(plan.productsToPut.length, 0)
 assert.equal(plan.storesToPut.length, 0)
 assert.equal(plan.purchasesToPut[0].productId, 'p1')
 assert.equal(plan.purchasesToPut[0].storeId, 's1')
+assert.equal(plan.transactionsToPut.length, 2)
 assert.deepEqual(merge.resolveMergeCurrency('تومان', 'تومان', 2, 3), { adoptIncomingCurrency: false })
 assert.deepEqual(merge.resolveMergeCurrency('تومان', 'ریال', 0, 3), { adoptIncomingCurrency: true })
 assert.throws(() => merge.resolveMergeCurrency('تومان', 'ریال', 2, 3))
 assert.throws(() => merge.planBackupMerge(
-  { products: [product('same', 'روغن')], stores: [], purchases: [purchase('local', 'same', '2026-01-01', 10)] },
+  { products: [product('same', 'روغن')], stores: [], purchases: [purchase('local', 'same', '2026-01-01', 10)], transactions: [] },
   { ...incoming, products: [{ ...product('same', 'روغن'), unit: 'لیتر' }], stores: [], purchases: [purchase('remote', 'same', '2026-02-01', 12)] },
 ))
 
 const valid = backup.validateBackup(incoming)
 assert.equal(valid.purchases.length, 1)
+assert.equal(valid.transactions.length, 2)
 
 const legacyBackup = {
   ...incoming,
+  version: 1,
   products: [{ ...product('legacy', 'کالای قدیمی'), weight: 7 }],
   purchases: [purchase('legacy-buy', 'legacy', '2026-04-02', 125)],
   stores: [],
 }
+delete legacyBackup.transactions
 const sanitizedLegacy = backup.validateBackup(legacyBackup)
 assert.equal('weight' in sanitizedLegacy.products[0], false)
+assert.deepEqual(sanitizedLegacy.transactions, [])
 const encrypted = await backup.encryptBackup(incoming, 'correct-horse-battery-staple')
 const decrypted = await backup.parseBackup(encrypted, 'correct-horse-battery-staple')
 assert.equal(decrypted.products[0].name, 'برنج')

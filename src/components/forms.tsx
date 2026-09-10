@@ -4,7 +4,7 @@ import { db, uid } from '../lib/db'
 import { PersianDatePicker } from './date-picker'
 import { formatMoney, todayISO } from '../lib/format'
 import { normalizeStoreName, sameNormalizedText } from '../lib/text'
-import type { Product, Purchase, Store } from '../lib/types'
+import type { FinancialTransaction, Product, Purchase, Store, TransactionKind } from '../lib/types'
 
 type ToastKind = 'ok' | 'error' | 'info'
 type PushToast = (text: string, kind?: ToastKind) => void
@@ -109,27 +109,26 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
   const [date, setDate] = useState(purchase?.date ?? todayISO())
   const [storeName, setStoreName] = useState(initialStore)
   const [quantity, setQuantity] = useState(String(purchase?.quantity ?? 1))
-  const [unitPrice, setUnitPrice] = useState(purchase ? String(purchase.listedUnitPrice ?? (purchase.unitPrice + ((purchase.discount ?? 0) / purchase.quantity))) : '')
-  const [discount, setDiscount] = useState(purchase?.discount ? String(purchase.discount) : '')
+  const [totalPaid, setTotalPaid] = useState(purchase ? String(purchase.totalPaid) : '')
+  const [listedTotal, setListedTotal] = useState(purchase?.discount ? String(purchase.totalPaid + purchase.discount) : '')
   const [note, setNote] = useState(purchase?.note ?? '')
-  const [touched, setTouched] = useState({ date: false, quantity: false, unitPrice: false, discount: false })
+  const [touched, setTouched] = useState({ date: false, quantity: false, totalPaid: false, listedTotal: false })
 
   const product = products.find(item => item.id === productId)
   const qty = Number(quantity)
-  const price = Number(unitPrice)
-  const disc = discount === '' ? 0 : Number(discount)
+  const paid = Number(totalPaid)
+  const listed = listedTotal === '' ? 0 : Number(listedTotal)
   const quantityInvalid = !Number.isFinite(qty) || qty <= 0
-  const priceInvalid = !Number.isFinite(price) || price <= 0
-  const discountInvalid = !Number.isFinite(disc) || disc < 0
-  const subtotal = !quantityInvalid && !priceInvalid ? qty * price : 0
-  const discountTooLarge = !discountInvalid && disc >= subtotal && subtotal > 0
-  const total = Math.max(0, subtotal - (Number.isFinite(disc) ? disc : 0))
+  const totalPaidInvalid = !Number.isFinite(paid) || paid <= 0
+  const listedTotalInvalid = listedTotal !== '' && (!Number.isFinite(listed) || listed <= 0 || listed < paid)
+  const effectiveUnitPrice = !quantityInvalid && !totalPaidInvalid ? paid / qty : 0
+  const discount = listedTotal !== '' && !listedTotalInvalid ? listed - paid : 0
   const dateInvalid = !date || date > todayISO()
-  const formInvalid = !productId || quantityInvalid || priceInvalid || discountInvalid || discountTooLarge || dateInvalid
+  const formInvalid = !productId || quantityInvalid || totalPaidInvalid || listedTotalInvalid || dateInvalid
   const showDateError = touched.date && dateInvalid
   const showQuantityError = touched.quantity && quantityInvalid
-  const showPriceError = touched.unitPrice && priceInvalid
-  const showDiscountError = touched.discount && (discountInvalid || discountTooLarge)
+  const showTotalPaidError = touched.totalPaid && totalPaidInvalid
+  const showListedTotalError = touched.listedTotal && listedTotalInvalid
   const markTouched = (field: keyof typeof touched) => setTouched(current => ({ ...current, [field]: true }))
 
   async function submit(event: FormEvent) {
@@ -137,8 +136,8 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
     if (formInvalid) {
       if (dateInvalid) return pushToast('تاریخ خرید نمی‌تواند بعد از امروز باشد.', 'error')
       if (quantityInvalid) return pushToast('مقدار خرید باید بیشتر از صفر باشد.', 'error')
-      if (priceInvalid) return pushToast('قیمت واحد باید بیشتر از صفر باشد.', 'error')
-      if (discountInvalid || discountTooLarge) return pushToast('مقدار تخفیف معتبر نیست.', 'error')
+      if (totalPaidInvalid) return pushToast('مبلغ پرداخت‌شده باید بیشتر از صفر باشد.', 'error')
+      if (listedTotalInvalid) return pushToast('مبلغ قبل از تخفیف نمی‌تواند از مبلغ پرداخت‌شده کمتر باشد.', 'error')
       return pushToast('اطلاعات فرم را کامل کنید.', 'error')
     }
 
@@ -165,10 +164,10 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
           storeId,
           date,
           quantity: qty,
-          listedUnitPrice: price,
-          unitPrice: total / qty,
-          totalPaid: total,
-          discount: disc || undefined,
+          listedUnitPrice: listedTotal !== '' ? listed / qty : undefined,
+          unitPrice: paid / qty,
+          totalPaid: paid,
+          discount: discount || undefined,
           note: note.trim() || undefined,
           createdAt: purchase?.createdAt ?? new Date().toISOString()
         }
@@ -204,20 +203,20 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
       <input inputMode="decimal" type="number" min="0.0001" step="any" value={quantity} onChange={event => setQuantity(event.target.value)} onBlur={() => markTouched('quantity')} required/>
       {showQuantityError ? <small className="field-error">مقدار باید بیشتر از صفر باشد.</small> : null}
     </label>
-    <label className={`field ${showPriceError ? 'field-invalid' : ''}`}>
-      <span>قیمت هر {product?.unit ?? 'واحد'} قبل از تخفیف *</span>
-      <input inputMode="numeric" type="number" min="0.0001" step="any" value={unitPrice} onChange={event => setUnitPrice(event.target.value)} onBlur={() => markTouched('unitPrice')} placeholder="مثلاً ۲۵۰۰۰۰" required/>
-      {showPriceError ? <small className="field-error">قیمت باید بیشتر از صفر باشد.</small> : null}
+    <label className={`field ${showTotalPaidError ? 'field-invalid' : ''}`}>
+      <span>مبلغ واقعی پرداخت‌شده ({currency}) *</span>
+      <input inputMode="numeric" type="number" min="0.0001" step="any" value={totalPaid} onChange={event => setTotalPaid(event.target.value)} onBlur={() => markTouched('totalPaid')} placeholder="مثلاً ۷۰۰۰۰" required/>
+      {showTotalPaidError ? <small className="field-error">مبلغ پرداخت‌شده باید بیشتر از صفر باشد.</small> : null}
     </label>
-    <label className={`field ${showDiscountError ? 'field-invalid' : ''}`}>
-      <span>تخفیف کل</span>
-      <input inputMode="numeric" type="number" min="0" step="any" value={discount} onChange={event => setDiscount(event.target.value)} onBlur={() => markTouched('discount')} placeholder="۰"/>
-      {showDiscountError ? (discountInvalid ? <small className="field-error">تخفیف نمی‌تواند منفی باشد.</small> : <small className="field-error">تخفیف باید کمتر از مبلغ قبل از تخفیف باشد.</small>) : null}
+    <label className={`field ${showListedTotalError ? 'field-invalid' : ''}`}>
+      <span>مبلغ کل قبل از تخفیف</span>
+      <input inputMode="numeric" type="number" min="0.0001" step="any" value={listedTotal} onChange={event => setListedTotal(event.target.value)} onBlur={() => markTouched('listedTotal')} placeholder="اختیاری"/>
+      {showListedTotalError ? <small className="field-error">این مبلغ باید برابر یا بیشتر از مبلغ پرداخت‌شده باشد.</small> : null}
     </label>
     <div className="field summary-field">
-      <span>مبلغ پرداختی</span>
-      <strong>{formatMoney(total, currency)}</strong>
-      {disc > 0 && Number.isFinite(disc) ? <small>قبل از تخفیف: {formatMoney(subtotal, currency, true)}</small> : null}
+      <span>قیمت واقعی هر {product?.unit ?? 'واحد'}</span>
+      <strong>{formatMoney(effectiveUnitPrice, currency)}</strong>
+      {discount > 0 ? <small>تخفیف کل: {formatMoney(discount, currency, true)}</small> : <small>از تقسیم مبلغ پرداختی بر مقدار خرید</small>}
     </div>
     <label className="field field-span-2">
       <span>یادداشت</span>
@@ -225,6 +224,91 @@ export function PurchaseForm({ products, stores, purchase, initialProductId, cur
     </label>
     <div className="form-actions field-span-2">
       <button className="button primary" type="submit" disabled={formInvalid}><Check size={18}/>{purchase ? 'ذخیره تغییرات' : 'ثبت خرید'}</button>
+      <button type="button" className="button ghost" onClick={onCancel}>انصراف</button>
+    </div>
+  </form>
+}
+
+interface TransactionFormProps {
+  transactions: FinancialTransaction[]
+  transaction?: FinancialTransaction | null
+  initialKind?: TransactionKind
+  currency: string
+  onDone: () => void
+  onCancel: () => void
+  pushToast: PushToast
+}
+
+const DEFAULT_CATEGORIES: Record<TransactionKind, string[]> = {
+  expense: ['مسکن', 'قبوض', 'حمل‌ونقل', 'درمان', 'آموزش', 'تفریح', 'خدمات', 'سایر'],
+  income: ['حقوق', 'فروش', 'هدیه', 'سرمایه‌گذاری', 'سایر'],
+}
+
+export function TransactionForm({ transactions, transaction, initialKind = 'expense', currency, onDone, onCancel, pushToast }: TransactionFormProps) {
+  const [kind, setKind] = useState<TransactionKind>(transaction?.kind ?? initialKind)
+  const [date, setDate] = useState(transaction?.date ?? todayISO())
+  const [amount, setAmount] = useState(transaction ? String(transaction.amount) : '')
+  const [category, setCategory] = useState(transaction?.category ?? '')
+  const [note, setNote] = useState(transaction?.note ?? '')
+  const numericAmount = Number(amount)
+  const invalid = !date || date > todayISO() || !Number.isFinite(numericAmount) || numericAmount <= 0 || !category.trim()
+  const knownCategories = [...new Set([
+    ...DEFAULT_CATEGORIES[kind],
+    ...transactions.filter(row => row.kind === kind).map(row => row.category),
+  ])].sort((a, b) => a.localeCompare(b, 'fa'))
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    if (date > todayISO()) return pushToast('تاریخ تراکنش نمی‌تواند بعد از امروز باشد.', 'error')
+    if (!Number.isFinite(numericAmount) || numericAmount <= 0) return pushToast('مبلغ باید بیشتر از صفر باشد.', 'error')
+    if (!category.trim()) return pushToast('دسته‌بندی را وارد کنید.', 'error')
+    const now = new Date().toISOString()
+    const row: FinancialTransaction = {
+      id: transaction?.id ?? uid('txn'),
+      kind,
+      date,
+      amount: numericAmount,
+      category: category.trim(),
+      note: note.trim() || undefined,
+      createdAt: transaction?.createdAt ?? now,
+      updatedAt: now,
+    }
+    try {
+      await db.transactions.put(row)
+      pushToast(transaction ? 'تراکنش ویرایش شد.' : kind === 'expense' ? 'هزینه ثبت شد.' : 'درآمد ثبت شد.')
+      onDone()
+    } catch {
+      pushToast('ذخیره تراکنش ناموفق بود. دوباره تلاش کنید.', 'error')
+    }
+  }
+
+  return <form onSubmit={submit} className="form-grid">
+    <label className="field field-span-2">
+      <span>نوع تراکنش *</span>
+      <select value={kind} onChange={event => { setKind(event.target.value as TransactionKind); setCategory('') }}>
+        <option value="expense">هزینه</option>
+        <option value="income">درآمد</option>
+      </select>
+    </label>
+    <div className="field">
+      <span>تاریخ *</span>
+      <PersianDatePicker value={date} onChange={setDate} max={todayISO()} required ariaLabel="تاریخ تراکنش"/>
+    </div>
+    <label className="field">
+      <span>مبلغ ({currency}) *</span>
+      <input inputMode="numeric" type="number" min="0.0001" step="any" value={amount} onChange={event => setAmount(event.target.value)} placeholder="مثلاً ۵۰۰۰۰۰" required/>
+    </label>
+    <label className="field field-span-2">
+      <span>دسته‌بندی *</span>
+      <input list={`transaction-categories-${kind}`} value={category} onChange={event => setCategory(event.target.value)} placeholder={kind === 'expense' ? 'مثلاً اجاره یا حمل‌ونقل' : 'مثلاً حقوق'} maxLength={500} required/>
+      <datalist id={`transaction-categories-${kind}`}>{knownCategories.map(item => <option value={item} key={item}/>)}</datalist>
+    </label>
+    <label className="field field-span-2">
+      <span>یادداشت</span>
+      <textarea value={note} onChange={event => setNote(event.target.value)} rows={2} placeholder="جزئیات اختیاری" maxLength={10_000}/>
+    </label>
+    <div className="form-actions field-span-2">
+      <button className="button primary" type="submit" disabled={invalid}><Check size={18}/>{transaction ? 'ذخیره تغییرات' : 'ثبت تراکنش'}</button>
       <button type="button" className="button ghost" onClick={onCancel}>انصراف</button>
     </div>
   </form>

@@ -1,9 +1,10 @@
-import { BarChart3, Database, Home, LineChart, Menu, Moon, ShoppingBasket, Sun, X } from 'lucide-react'
+import { BarChart3, Database, Home, LineChart, Menu, Moon, ShoppingBasket, Sun, WalletCards, X } from 'lucide-react'
 import { Badge } from './ui'
 
 export const NAV_ITEMS = [
   { id: 'dashboard', label: 'داشبورد', mobileLabel: 'داشبورد', icon: Home },
   { id: 'products', label: 'کالاها', mobileLabel: 'کالاها', icon: ShoppingBasket },
+  { id: 'finance', label: 'دخل‌وخرج', mobileLabel: 'دخل‌وخرج', icon: WalletCards },
   { id: 'analytics', label: 'تحلیل‌ها', mobileLabel: 'تحلیل‌ها', icon: BarChart3 },
   { id: 'data', label: 'داده و تنظیمات', mobileLabel: 'تنظیمات', icon: Database },
 ] as const

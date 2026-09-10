@@ -32,6 +32,19 @@ export interface Purchase {
   createdAt: string
 }
 
+export type TransactionKind = 'income' | 'expense'
+
+export interface FinancialTransaction {
+  id: string
+  kind: TransactionKind
+  date: string
+  amount: number
+  category: string
+  note?: string
+  createdAt: string
+  updatedAt: string
+}
+
 export interface AppSettings {
   id: 'main'
   currency: string
@@ -42,10 +55,11 @@ export interface AppSettings {
 
 export interface BackupData {
   schema: 'gheymat-negar'
-  version: 1
+  version: 1 | 2
   exportedAt: string
   products: Product[]
   stores: Store[]
   purchases: Purchase[]
+  transactions: FinancialTransaction[]
   settings: AppSettings
 }

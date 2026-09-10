@@ -40,6 +40,17 @@ const purchaseSchema = z.object({
   createdAt: isoDateTime
 })
 
+const transactionSchema = z.object({
+  id: idSchema,
+  kind: z.enum(['income', 'expense']),
+  date: isoDate,
+  amount: z.number().positive().finite(),
+  category: shortText.min(1),
+  note: longText.optional(),
+  createdAt: isoDateTime,
+  updatedAt: isoDateTime
+})
+
 const settingsSchema = z.object({
   id: z.literal('main'),
   currency: shortText.min(1),
@@ -50,11 +61,12 @@ const settingsSchema = z.object({
 
 const backupSchema = z.object({
   schema: z.literal('gheymat-negar'),
-  version: z.literal(1),
+  version: z.union([z.literal(1), z.literal(2)]),
   exportedAt: isoDateTime,
   products: z.array(productSchema).max(100_000),
   stores: z.array(storeSchema).max(100_000),
   purchases: z.array(purchaseSchema).max(1_000_000),
+  transactions: z.array(transactionSchema).max(1_000_000).default([]),
   settings: settingsSchema
 })
 
@@ -92,22 +104,24 @@ function assertUniqueIds<T extends { id: string }>(rows: T[], label: string) {
 }
 
 export function validateBackupIntegrity(data: BackupData) {
-  assertUniqueIds(data.products, 'کالاها')
-  assertUniqueIds(data.stores, 'فروشگاه‌ها')
-  assertUniqueIds(data.purchases, 'خریدها')
+  const normalized = { ...data, transactions: data.transactions ?? [] }
+  assertUniqueIds(normalized.products, 'کالاها')
+  assertUniqueIds(normalized.stores, 'فروشگاه‌ها')
+  assertUniqueIds(normalized.purchases, 'خریدها')
+  assertUniqueIds(normalized.transactions, 'تراکنش‌ها')
 
-  const productIds = new Set(data.products.map(product => product.id))
-  const storeIds = new Set(data.stores.map(store => store.id))
+  const productIds = new Set(normalized.products.map(product => product.id))
+  const storeIds = new Set(normalized.stores.map(store => store.id))
   const storeNames = new Set<string>()
 
-  for (const store of data.stores) {
+  for (const store of normalized.stores) {
     const key = normalizePersianText(store.name)
     if (!key) throw new Error('نام یک فروشگاه در پشتیبان خالی است.')
     if (storeNames.has(key)) throw new Error(`نام فروشگاه «${store.name}» در پشتیبان تکراری است.`)
     storeNames.add(key)
   }
 
-  for (const purchase of data.purchases) {
+  for (const purchase of normalized.purchases) {
     if (!productIds.has(purchase.productId)) throw new Error('پشتیبان شامل خریدی است که کالای وابسته به آن وجود ندارد.')
     if (purchase.storeId && !storeIds.has(purchase.storeId)) throw new Error('پشتیبان شامل خریدی است که فروشگاه وابسته به آن وجود ندارد.')
 
@@ -125,7 +139,7 @@ export function validateBackupIntegrity(data: BackupData) {
     }
   }
 
-  return data
+  return normalized
 }
 
 
@@ -154,7 +168,7 @@ export async function encryptBackup(data: BackupData, password: string) {
     false,
     ['encrypt']
   )
-  const plaintext = new TextEncoder().encode(JSON.stringify(validateBackupIntegrity(data)))
+  const plaintext = new TextEncoder().encode(JSON.stringify(validateBackupIntegrity({ ...data, transactions: data.transactions ?? [] })))
   const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext))
 
   return JSON.stringify({
@@ -256,6 +270,18 @@ export function purchasesToCsv(data: BackupData) {
     purchase.totalPaid,
     purchase.discount ?? '',
     purchase.note ?? ''
+  ])
+  return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
+}
+
+export function transactionsToCsv(data: BackupData) {
+  const headers = ['تاریخ', 'نوع', 'دسته‌بندی', 'مبلغ', 'یادداشت']
+  const rows = data.transactions.map(transaction => [
+    transaction.date,
+    transaction.kind === 'expense' ? 'هزینه' : 'درآمد',
+    transaction.category,
+    transaction.amount,
+    transaction.note ?? ''
   ])
   return '\uFEFF' + [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n')
 }

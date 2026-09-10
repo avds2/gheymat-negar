@@ -1,4 +1,5 @@
-import type { Product, Purchase, Store } from './types'
+import type { FinancialTransaction, Product, Purchase, Store } from './types'
+import { startOfPersianMonthISO } from './persian-date'
 
 export interface ProductStat {
   product: Product
@@ -18,6 +19,15 @@ export interface CompositePoint {
   index: number
   matched: number
   coveragePct: number
+}
+
+export interface CashflowPoint {
+  month: string
+  purchaseExpense: number
+  otherExpense: number
+  expense: number
+  income: number
+  net: number
 }
 
 const safePct = (from: number, to: number) => from > 0 ? ((to / from) - 1) * 100 : null
@@ -269,6 +279,40 @@ export function storeComparison(productId: string, purchases: Purchase[], stores
 
 export function totalSpend(purchases: Purchase[]) {
   return purchases.reduce((sum, purchase) => sum + purchase.totalPaid, 0)
+}
+
+export function buildMonthlyCashflow(purchases: Purchase[], transactions: FinancialTransaction[]): CashflowPoint[] {
+  const months = new Map<string, Omit<CashflowPoint, 'month' | 'expense' | 'net'>>()
+  const ensure = (date: string) => {
+    const month = startOfPersianMonthISO(date)
+    const point = months.get(month) ?? { purchaseExpense: 0, otherExpense: 0, income: 0 }
+    months.set(month, point)
+    return point
+  }
+
+  for (const purchase of purchases) {
+    if (!isValidSpend(purchase.totalPaid)) continue
+    ensure(purchase.date).purchaseExpense += purchase.totalPaid
+  }
+  for (const transaction of transactions) {
+    if (!isValidSpend(transaction.amount)) continue
+    const point = ensure(transaction.date)
+    if (transaction.kind === 'income') point.income += transaction.amount
+    else point.otherExpense += transaction.amount
+  }
+
+  return [...months.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([month, point]) => {
+    const expense = point.purchaseExpense + point.otherExpense
+    return { month, ...point, expense, net: point.income - expense }
+  })
+}
+
+export function percentageChange(from: number, to: number) {
+  return from > 0 && Number.isFinite(from) && Number.isFinite(to) ? ((to / from) - 1) * 100 : null
+}
+
+export function transactionTotal(rows: FinancialTransaction[], kind?: FinancialTransaction['kind']) {
+  return rows.reduce((sum, row) => sum + (kind && row.kind !== kind ? 0 : row.amount), 0)
 }
 
 export function lastNDaysISO(days: number) {

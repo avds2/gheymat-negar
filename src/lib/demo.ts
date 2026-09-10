@@ -1,4 +1,4 @@
-import type { Product, Purchase, Store } from './types'
+import type { FinancialTransaction, Product, Purchase, Store } from './types'
 import { uid } from './db'
 
 export function makeDemoData() {
@@ -15,6 +15,7 @@ export function makeDemoData() {
     .map(name => ({ id: uid('str'), name, createdAt: now }))
 
   const purchases: Purchase[] = []
+  const transactions: FinancialTransaction[] = []
   const starts = [145000, 89000, 76000, 240000, 190000]
   const today = new Date()
 
@@ -43,7 +44,17 @@ export function makeDemoData() {
         createdAt: now
       })
     }
+    const monthDate = new Date(today.getFullYear(), today.getMonth() - monthOffset, 2, 12)
+    const date = monthDate.toISOString().slice(0, 10)
+    const updatedAt = now
+    const addTransaction = (kind: FinancialTransaction['kind'], category: string, amount: number, note?: string) => transactions.push({
+      id: uid('txn'), kind, category, amount, date, note, createdAt: now, updatedAt
+    })
+    addTransaction('income', 'حقوق', 38_000_000 + sequence * 700_000)
+    addTransaction('expense', 'مسکن', 12_000_000 + sequence * 300_000)
+    addTransaction('expense', 'حمل‌ونقل', 1_800_000 + sequence * 80_000)
+    if (sequence % 2 === 0) addTransaction('expense', 'قبوض', 900_000 + sequence * 30_000)
   }
 
-  return { products, stores, purchases }
+  return { products, stores, purchases, transactions }
 }

@@ -1,4 +1,4 @@
-# QA / Release checklist — 1.3.5
+# QA / Release checklist — 1.4.0
 
 ## بررسی‌های انجام‌شده روی سورس این Release
 
@@ -9,6 +9,8 @@
   - dedup/remap کالا و فروشگاه در Merge
   - جلوگیری از Merge واحد پول ناسازگار
   - نگاشت تاریخ ISO به تقویم شمسی و شروع/ناوبری ماه فارسی
+  - تجمیع خریدها، درآمدها و هزینه‌ها در cashflow ماه شمسی
+  - محاسبه تغییر مخارج و سازگاری Backup نسخه 1 بدون Transaction
 - syntax check برای scriptهای Node
 - اجرای `build-sw.mjs` روی یک `dist` نمونه و syntax check فایل Service Worker تولیدشده
 - بررسی breakpointهای CSS برای انحصاری بودن Sidebar / Drawer / Bottom Navigation
@@ -41,6 +43,12 @@ npm run preview
 8. JSON Backup گرفته، داده پاک و Replace Import تست شود.
 9. Merge با Backup هم‌واحد و سپس Merge آزمایشی با currency متفاوت بررسی شود.
 10. بعد از `npm run preview` صفحه یک‌بار آنلاین باز، سپس DevTools روی Offline قرار داده و reload شود.
+11. خریدی با مقدار اعشاری و مبلغ پرداختی واقعی ثبت شود؛ قیمت واحد باید از تقسیم این دو ساخته شود.
+12. مبلغ قبل از تخفیف کمتر از مبلغ پرداختی پذیرفته نشود؛ مقدار برابر باید تخفیف صفر بسازد.
+13. درآمد و هزینه مستقل ثبت، ویرایش و حذف شوند و در دفتر ماه شمسی درست ظاهر شوند.
+14. خرید ثبت‌شده بدون ایجاد Transaction جداگانه در جمع هزینه و سبد هزینه همان ماه لحاظ شود.
+15. بین ماه‌های گزارش جابه‌جا شوید؛ مقایسه ماه قبل/سال قبل و فهرست رکوردهای همان ماه به‌روز شوند.
+16. Backup نسخه 2 با Transactionها Replace و Merge شود و Backup نسخه 1 با آرایه Transaction خالی وارد شود.
 
 
 ## Regression checks for automatic basket weighting
@@ -52,12 +60,12 @@ npm run preview
 - در تست دو کالا با رشد قیمت متفاوت، کالایی که سابقه هزینه ماهانه بیشتری دارد اثر بیشتری بر شاخص ترکیبی می‌گذارد.
 - متن داشبورد و جزئیات کالا دیگر به وزن دستی اشاره نمی‌کند.
 
-## UX regression checks for 1.3.5
+## UX regression checks for 1.4.0
 
 - Open each primary tab after scrolling down another page; the window starts at the top.
 - On the Products page, confirm the primary “ثبت خرید” action appears before the secondary “کالای جدید” action in RTL visual order.
 - Product detail edit/archive/delete actions render as one grouped control, with delete retaining destructive hover styling.
-- Open “ثبت خرید جدید”: the empty required price field is neutral initially; after leaving it empty, the inline error appears.
+- پنجره «ثبت خرید جدید» در شروع فیلد مبلغ پرداختی را خنثی نشان دهد؛ پس از ترک فیلد خالی، خطای درون‌خطی ظاهر شود و قیمت واحد محاسبه‌شده در خلاصه دیده شود.
 - تمام فیلدهای انتخاب تاریخ از Date Picker شمسی مشترک استفاده کنند؛ تاریخ انتخاب‌شده با ماه شمسی نمایش داده شود، تاریخ آینده قابل انتخاب نباشد و Escape تقویم را بدون بستن Modal ببندد.
 - Chart first/last X-axis labels are not visibly clipped at common desktop widths.
 - Sidebar status and descriptive privacy copy are fully Persian except necessary technical names such as IndexedDB/JSON/CSV.
